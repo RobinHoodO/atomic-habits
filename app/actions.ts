@@ -1,0 +1,318 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import { AuthError } from "next-auth";
+import { signIn, signOut } from "@/lib/auth";
+import { requireUser } from "@/lib/session";
+import { createUser, getUserById } from "@/lib/users";
+import {
+  createIdentity,
+  createHabit,
+  updateHabit,
+  setArchived,
+  toggleCompletion,
+  unlockBadges,
+  assertCanEdit,
+  areConnected,
+  addStack,
+  removeStack,
+  addBundle,
+  removeBundle,
+  addEnvItem,
+  removeEnvItem,
+  upsertContract,
+  requestConnection,
+  acceptConnection,
+  addPartner,
+  createChallenge,
+  respondChallenge,
+  spendFreeze,
+  type HabitInput,
+  type HabitType,
+  type Visibility,
+} from "@/lib/habits";
+import { todayStr } from "@/lib/score";
+
+// ---- form helpers ----
+function str(fd: FormData, key: string): string | null {
+  const v = fd.get(key);
+  if (typeof v !== "string") return null;
+  const t = v.trim();
+  return t === "" ? null : t;
+}
+function reqStr(fd: FormData, key: string): string {
+  const v = str(fd, key);
+  if (!v) throw new Error(`Missing required field: ${key}`);
+  return v;
+}
+function num(fd: FormData, key: string): number {
+  const v = str(fd, key);
+  const n = v ? Number(v) : NaN;
+  if (!Number.isFinite(n)) throw new Error(`Invalid number: ${key}`);
+  return n;
+}
+function buildSchedule(fd: FormData): string {
+  if (fd.get("scheduleMode") !== "weekly") return "daily";
+  const days = fd.getAll("day").map((d) => Number(d)).filter((n) => n >= 0 && n <= 6);
+  return days.length === 0 || days.length === 7 ? "daily" : JSON.stringify(days);
+}
+function parseHabitInput(fd: FormData): HabitInput {
+  const identity = str(fd, "identity_id");
+  return {
+    name: reqStr(fd, "name"),
+    type: (str(fd, "type") ?? "good") as HabitType,
+    identity_id: identity ? Number(identity) : null,
+    cue: str(fd, "cue"),
+    craving: str(fd, "craving"),
+    response: str(fd, "response"),
+    reward: str(fd, "reward"),
+    intention_time: str(fd, "intention_time"),
+    intention_location: str(fd, "intention_location"),
+    gateway_text: str(fd, "gateway_text"),
+    schedule: buildSchedule(fd),
+    visibility: (str(fd, "visibility") === "connections" ? "connections" : "private") as Visibility,
+  };
+}
+
+// ======================= auth =======================
+
+export async function registerAction(fd: FormData) {
+  const email = reqStr(fd, "email").toLowerCase();
+  const name = reqStr(fd, "name");
+  const password = reqStr(fd, "password");
+  if (password.length < 8) redirect("/register?error=short");
+  try {
+    await createUser(email, name, password);
+  } catch {
+    redirect("/register?error=exists");
+  }
+  await signIn("credentials", { email, password, redirectTo: "/" });
+}
+
+export async function loginAction(fd: FormData) {
+  const email = reqStr(fd, "email").toLowerCase();
+  const password = reqStr(fd, "password");
+  try {
+    await signIn("credentials", { email, password, redirectTo: "/" });
+  } catch (e) {
+    if (e instanceof AuthError) redirect("/login?error=1");
+    throw e;
+  }
+}
+
+export async function logoutAction() {
+  await signOut({ redirectTo: "/login" });
+}
+
+// ======================= identities =======================
+
+export async function createIdentityAction(fd: FormData) {
+  const user = await requireUser();
+  createIdentity(user.id, reqStr(fd, "name"), reqStr(fd, "statement"));
+  revalidatePath("/identities");
+  redirect("/identities");
+}
+
+// ======================= habits =======================
+
+export async function createHabitAction(fd: FormData) {
+  const user = await requireUser();
+  const id = createHabit(user.id, parseHabitInput(fd));
+  revalidatePath("/");
+  revalidatePath("/habits");
+  redirect(`/habits/${id}`);
+}
+
+export async function updateHabitAction(fd: FormData) {
+  const user = await requireUser();
+  const id = num(fd, "id");
+  updateHabit(id, user.id, parseHabitInput(fd));
+  revalidatePath("/");
+  revalidatePath("/habits");
+  redirect(`/habits/${id}`);
+}
+
+export async function archiveHabitAction(fd: FormData) {
+  const user = await requireUser();
+  setArchived(num(fd, "id"), user.id, str(fd, "archived") === "1");
+  revalidatePath("/");
+  revalidatePath("/habits");
+  redirect("/habits");
+}
+
+export async function toggleCompletionAction(fd: FormData) {
+  const user = await requireUser();
+  const habitId = num(fd, "habit_id");
+  const date = str(fd, "date") ?? todayStr();
+  toggleCompletion(habitId, user.id, date, str(fd, "is_gateway") === "1");
+  unlockBadges(user.id);
+  revalidatePath("/");
+  revalidatePath(`/habits/${habitId}`);
+  revalidatePath("/progress");
+}
+
+// ======================= stacks =======================
+
+export async function addStackAction(fd: FormData) {
+  const user = await requireUser();
+  const anchor = num(fd, "anchor_habit_id");
+  const stacked = num(fd, "stacked_habit_id");
+  assertCanEdit(anchor, user.id);
+  assertCanEdit(stacked, user.id);
+  addStack(anchor, stacked);
+  revalidatePath(`/habits/${num(fd, "from")}`);
+}
+
+export async function removeStackAction(fd: FormData) {
+  const user = await requireUser();
+  assertCanEdit(num(fd, "from"), user.id);
+  removeStack(num(fd, "id"));
+  revalidatePath(`/habits/${num(fd, "from")}`);
+}
+
+// ======================= bundles / env / contract =======================
+
+export async function addBundleAction(fd: FormData) {
+  const user = await requireUser();
+  const habitId = num(fd, "habit_id");
+  assertCanEdit(habitId, user.id);
+  addBundle(habitId, reqStr(fd, "want_text"));
+  revalidatePath(`/habits/${habitId}`);
+}
+
+export async function removeBundleAction(fd: FormData) {
+  const user = await requireUser();
+  const habitId = num(fd, "habit_id");
+  assertCanEdit(habitId, user.id);
+  removeBundle(num(fd, "id"));
+  revalidatePath(`/habits/${habitId}`);
+}
+
+export async function addEnvItemAction(fd: FormData) {
+  const user = await requireUser();
+  const habitId = num(fd, "habit_id");
+  assertCanEdit(habitId, user.id);
+  const kind = str(fd, "kind") === "friction" ? "friction" : "obvious";
+  addEnvItem(habitId, reqStr(fd, "text"), kind);
+  revalidatePath(`/habits/${habitId}`);
+}
+
+export async function removeEnvItemAction(fd: FormData) {
+  const user = await requireUser();
+  const habitId = num(fd, "habit_id");
+  assertCanEdit(habitId, user.id);
+  removeEnvItem(num(fd, "id"));
+  revalidatePath(`/habits/${habitId}`);
+}
+
+export async function saveContractAction(fd: FormData) {
+  const user = await requireUser();
+  const habitId = num(fd, "habit_id");
+  const habit = assertCanEdit(habitId, user.id);
+
+  const partnerRaw = str(fd, "partner_user_id");
+  const partnerId = partnerRaw ? Number(partnerRaw) : null;
+  let partnerName = str(fd, "partner_name");
+  if (partnerId) {
+    const u = getUserById(partnerId);
+    if (u) partnerName = u.name;
+  }
+
+  upsertContract({
+    habit_id: habitId,
+    commitment: reqStr(fd, "commitment"),
+    stake: str(fd, "stake"),
+    consequence: str(fd, "consequence"),
+    partner_name: partnerName,
+    partner_user_id: partnerId,
+  });
+
+  // auto-pair the partner on a shared habit so they can follow + nudge
+  if (
+    partnerId &&
+    habit.owner_id === user.id &&
+    habit.visibility === "connections" &&
+    areConnected(user.id, partnerId)
+  ) {
+    addPartner(habitId, user.id, partnerId);
+  }
+
+  revalidatePath(`/habits/${habitId}`);
+  revalidatePath("/people");
+}
+
+// ======================= social =======================
+
+export async function requestConnectionAction(fd: FormData) {
+  const user = await requireUser();
+  requestConnection(user.id, reqStr(fd, "email"));
+  revalidatePath("/people");
+  redirect("/people");
+}
+
+export async function acceptConnectionAction(fd: FormData) {
+  const user = await requireUser();
+  acceptConnection(num(fd, "id"), user.id);
+  revalidatePath("/people");
+}
+
+export async function addPartnerAction(fd: FormData) {
+  const user = await requireUser();
+  const habitId = num(fd, "habit_id");
+  addPartner(habitId, user.id, num(fd, "partner_id"));
+  revalidatePath(`/habits/${habitId}`);
+}
+
+// ======================= challenges =======================
+
+export async function createChallengeAction(fd: FormData) {
+  const user = await requireUser();
+  createChallenge(user.id, num(fd, "to_user_id"), num(fd, "days"));
+  revalidatePath("/challenges");
+  redirect("/challenges");
+}
+
+export async function respondChallengeAction(fd: FormData) {
+  const user = await requireUser();
+  respondChallenge(num(fd, "id"), user.id, str(fd, "accept") === "1");
+  revalidatePath("/challenges");
+}
+
+export async function useFreezeAction(fd: FormData) {
+  const user = await requireUser();
+  const habitId = num(fd, "habit_id");
+  spendFreeze(habitId, user.id, reqStr(fd, "date"));
+  revalidatePath("/");
+  revalidatePath(`/habits/${habitId}`);
+  revalidatePath("/progress");
+}
+
+// ======================= onboarding =======================
+
+export async function onboardingAction(fd: FormData) {
+  const user = await requireUser();
+
+  const idName = str(fd, "identity_name");
+  const idStatement = str(fd, "identity_statement");
+  const identityId =
+    idName && idStatement ? createIdentity(user.id, idName, idStatement) : null;
+
+  createHabit(user.id, {
+    name: reqStr(fd, "name"),
+    type: (str(fd, "type") ?? "good") as HabitType,
+    identity_id: identityId,
+    cue: str(fd, "cue"),
+    craving: null,
+    response: null,
+    reward: null,
+    intention_time: str(fd, "intention_time"),
+    intention_location: str(fd, "intention_location"),
+    gateway_text: str(fd, "gateway_text"),
+    schedule: "daily",
+    visibility: "private",
+  });
+
+  revalidatePath("/");
+  redirect("/");
+}

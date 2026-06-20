@@ -1,0 +1,109 @@
+@import "tailwindcss";
+
+/* ----------------------------------------------------------------------
+   Bright, minimalist design system.
+   Restrained palette: near-white surfaces, one calm indigo accent,
+   semantic good/bad. Soft borders, gentle shadows, generous space.
+---------------------------------------------------------------------- */
+:root {
+  --background: #fbfbfd;
+  --surface: #ffffff;
+  --surface-2: #f4f5f8;
+  --border: #e8eaf0;
+  --foreground: #16181d;
+  --muted: #6b7280;
+  --good: #16a34a;
+  --bad: #e1483d;
+  --neutral: #9aa1ad;
+  --accent: #4f46e5;
+  --accent-soft: #eef0fe;
+  --radius: 0.9rem;
+  --shadow: 0 1px 2px rgba(16, 18, 25, 0.04), 0 6px 20px rgba(16, 18, 25, 0.05);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-good: var(--good);
+  --color-bad: var(--bad);
+  --color-neutral: var(--neutral);
+  --color-accent: var(--accent);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+@layer components {
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.25rem;
+    box-shadow: var(--shadow);
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--foreground);
+    border-radius: 0.6rem;
+    padding: 0.5rem 0.9rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    line-height: 1;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s, opacity 0.15s, transform 0.05s;
+  }
+  .btn:hover { background: var(--surface-2); }
+  .btn:active { transform: translateY(0.5px); }
+  .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  .btn:disabled:hover { background: var(--surface); }
+
+  .btn-primary {
+    background: var(--accent);
+    color: #ffffff;
+    border-color: var(--accent);
+  }
+  .btn-primary:hover { background: #4338ca; }
+
+  .input, .select, .textarea {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--foreground);
+    border-radius: 0.6rem;
+    padding: 0.55rem 0.75rem;
+    font-size: 0.9rem;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .input:focus, .select:focus, .textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+  .input::placeholder { color: #aab0bb; }
+
+  .label {
+    display: block;
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--muted);
+    margin-bottom: 0.3rem;
+  }
+
+  .req::after { content: " *"; color: var(--bad); }
+}
