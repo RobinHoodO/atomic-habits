@@ -296,7 +296,7 @@ export default async function HabitDetailPage({
             <label className="label req">Commitment</label>
             <input className="input" name="commitment" data-label="your commitment" defaultValue={contract?.commitment ?? ""} placeholder="I will stick to this habit because…" required />
           </div>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div>
               <label className="label">Stake</label>
               <input className="input" name="stake" defaultValue={contract?.stake ?? ""} placeholder="what's on the line" />

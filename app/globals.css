@@ -87,7 +87,7 @@ body {
     color: var(--foreground);
     border-radius: 0.6rem;
     padding: 0.55rem 0.75rem;
-    font-size: 0.9rem;
+    font-size: 16px; /* >=16px stops iOS Safari zooming in on focus */
     transition: border-color 0.15s, box-shadow 0.15s;
   }
   .input:focus, .select:focus, .textarea:focus {
