@@ -44,29 +44,45 @@ export default async function ProgressPage() {
         <div className="text-2xl font-bold">{freezes}</div>
       </div>
 
-      {/* badges */}
+      {/* badges — earned shown proudly; locked tucked behind a disclosure so a
+          new user isn't greeted by a wall of grey padlocks. */}
       <section className="flex flex-col gap-3">
         <h2 className="text-sm font-semibold text-muted">
           Achievements · {earned.size}/{BADGES.length}
         </h2>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {BADGES.map((b) => {
-            const got = earned.has(b.key);
-            return (
-              <div
-                key={b.key}
-                className={`flex flex-col items-center gap-1 rounded-xl border p-3 text-center ${
-                  got ? "border-border bg-surface" : "border-border bg-surface-2 opacity-45"
-                }`}
-                title={b.desc}
-              >
-                <div className="text-3xl">{got ? b.emoji : "🔒"}</div>
+
+        {earned.size === 0 ? (
+          <p className="text-sm text-muted">
+            None yet — your first check-in unlocks one. 🎯
+          </p>
+        ) : (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {BADGES.filter((b) => earned.has(b.key)).map((b) => (
+              <div key={b.key} className="flex flex-col items-center gap-1 rounded-xl border border-border bg-surface p-3 text-center" title={b.desc}>
+                <div className="text-3xl">{b.emoji}</div>
                 <div className="text-xs font-medium">{b.title}</div>
                 <div className="text-[0.65rem] text-muted">{b.desc}</div>
               </div>
-            );
-          })}
-        </div>
+            ))}
+          </div>
+        )}
+
+        {earned.size < BADGES.length && (
+          <details className="group">
+            <summary className="cursor-pointer list-none text-xs text-muted hover:text-foreground">
+              ▸ {BADGES.length - earned.size} still to unlock
+            </summary>
+            <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {BADGES.filter((b) => !earned.has(b.key)).map((b) => (
+                <div key={b.key} className="flex flex-col items-center gap-1 rounded-xl border border-border bg-surface-2 p-3 text-center opacity-60" title={b.desc}>
+                  <div className="text-3xl">🔒</div>
+                  <div className="text-xs font-medium">{b.title}</div>
+                  <div className="text-[0.65rem] text-muted">{b.desc}</div>
+                </div>
+              ))}
+            </div>
+          </details>
+        )}
       </section>
     </div>
   );

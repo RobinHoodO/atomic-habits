@@ -126,6 +126,61 @@ CREATE TABLE IF NOT EXISTS freeze_credits (
   user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
   earned  INTEGER NOT NULL DEFAULT 0
 );
+
+-- ===== Shared household ("Home"): co-designed chores + points + fairness =====
+
+CREATE TABLE IF NOT EXISTS homes (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  name       TEXT NOT NULL,
+  created_by INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS home_members (
+  home_id INTEGER NOT NULL REFERENCES homes(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  role    TEXT NOT NULL DEFAULT 'member',          -- owner | member
+  PRIMARY KEY (home_id, user_id)
+);
+
+-- A recurring responsibility. cadence drives the "due" calc; points are
+-- co-designed; assignee/rotating/conditional model who owns it.
+CREATE TABLE IF NOT EXISTS chores (
+  id               INTEGER PRIMARY KEY AUTOINCREMENT,
+  home_id          INTEGER NOT NULL REFERENCES homes(id) ON DELETE CASCADE,
+  title            TEXT NOT NULL,
+  area             TEXT,                            -- Kjøkken, Bad, Klesvask, Balkong…
+  cadence          TEXT NOT NULL DEFAULT 'weekly',  -- daily|weekly|biweekly|monthly|quarterly|semiannual|annual|seasonal|adhoc
+  points           INTEGER NOT NULL DEFAULT 10,
+  assignee_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL, -- NULL = open/whoever
+  rotating         INTEGER NOT NULL DEFAULT 0,      -- 1 = ownership alternates each period
+  conditional_note TEXT,                            -- "den som lagde mat" etc (display)
+  active           INTEGER NOT NULL DEFAULT 1,
+  created_at       TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- A logged completion of a chore: who did it, when, points snapshot.
+CREATE TABLE IF NOT EXISTS chore_logs (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  chore_id   INTEGER NOT NULL REFERENCES chores(id) ON DELETE CASCADE,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  date       TEXT NOT NULL,                         -- YYYY-MM-DD
+  points     INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Section 9: the ad-hoc backlog. Items older than 2 weeks get flagged for "the
+-- nearest weekend". Completing one awards points.
+CREATE TABLE IF NOT EXISTS home_tasks (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  home_id    INTEGER NOT NULL REFERENCES homes(id) ON DELETE CASCADE,
+  title      TEXT NOT NULL,
+  points     INTEGER NOT NULL DEFAULT 5,
+  created_by INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  done_at    TEXT,
+  done_by    INTEGER REFERENCES users(id) ON DELETE SET NULL
+);
 `;
 
 // First real migration: the DB already holds data, so new COLUMNS need ALTER

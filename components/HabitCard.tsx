@@ -35,7 +35,10 @@ export default function HabitCard({
 
   return (
     <details open={!done} className="card group p-0">
-      <summary className="flex cursor-pointer list-none items-center gap-3 p-4 [&::-webkit-details-marker]:hidden">
+      <summary
+        title={done ? "Tap to expand — undo or see stats" : "Tap to collapse"}
+        className="flex cursor-pointer list-none items-center gap-3 p-4 [&::-webkit-details-marker]:hidden"
+      >
         <span
           aria-hidden
           className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md border text-sm ${
@@ -58,6 +61,7 @@ export default function HabitCard({
             {stats.streak > 0 && <span className="text-good">🔥 {stats.streak}</span>}
           </span>
         </span>
+        {done && <span className="shrink-0 text-xs text-muted group-open:hidden">tap to undo</span>}
         <svg
           aria-hidden
           viewBox="0 0 20 20"

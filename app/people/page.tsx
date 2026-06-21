@@ -91,7 +91,10 @@ export default async function PeoplePage() {
 
       {/* connections + their visible progress */}
       {connections.length === 0 ? (
-        <div className="card text-muted">No connections yet. Send a request above.</div>
+        <div className="card flex flex-col gap-1 text-sm text-muted">
+          <span className="font-medium text-foreground">No connections yet.</span>
+          <span>Add someone by email above (they need an account too). Once connected you can follow each other’s habits, pair up on a shared one, and run check-in challenges.</span>
+        </div>
       ) : (
         connections.map((c) => {
           const habits = visibleHabitsOf(c.user_id, user.id);

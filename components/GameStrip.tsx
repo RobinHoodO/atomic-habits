@@ -5,6 +5,9 @@ import { levelForXp, BADGES } from "@/lib/gamify";
 // Compact level + XP bar + latest badge, links to /progress.
 export default function GameStrip({ userId }: { userId: number }) {
   const xp = userXp(userId);
+  // Don't show the level chrome until there's a reason to — an empty Level 1 bar
+  // before the first check-in just demotivates a new user.
+  if (xp === 0) return null;
   const lvl = levelForXp(xp);
   const earned = listAchievements(userId);
   const latest = earned[0] ? BADGES.find((b) => b.key === earned[0].key) : undefined;

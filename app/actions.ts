@@ -144,7 +144,10 @@ export async function archiveHabitAction(fd: FormData) {
 export async function toggleCompletionAction(fd: FormData) {
   const user = await requireUser();
   const habitId = num(fd, "habit_id");
-  const date = str(fd, "date") ?? todayStr();
+  // date comes from a hidden field — only trust a real ISO day, else fall back
+  // to today so a garbage value can't corrupt streak math.
+  const raw = str(fd, "date");
+  const date = raw && /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : todayStr();
   toggleCompletion(habitId, user.id, date, str(fd, "is_gateway") === "1");
   unlockBadges(user.id);
   revalidatePath("/");
@@ -212,7 +215,10 @@ export async function saveContractAction(fd: FormData) {
   const habit = assertCanEdit(habitId, user.id);
 
   const partnerRaw = str(fd, "partner_user_id");
-  const partnerId = partnerRaw ? Number(partnerRaw) : null;
+  let partnerId = partnerRaw ? Number(partnerRaw) : null;
+  // only accept a partner the owner is actually connected to — a crafted POST
+  // can't pin a stranger as your accountability partner.
+  if (partnerId && !areConnected(user.id, partnerId)) partnerId = null;
   let partnerName = str(fd, "partner_name");
   if (partnerId) {
     const u = getUserById(partnerId);

@@ -301,7 +301,9 @@ export function habitStartDate(habitId: number): string {
   const row = getDb()
     .prepare(`SELECT created_at FROM habits WHERE id = ?`)
     .get(habitId) as { created_at?: string } | undefined;
-  return (row?.created_at ?? todayStr()).slice(0, 10);
+  const start = (row?.created_at ?? todayStr()).slice(0, 10);
+  const t = todayStr();
+  return start > t ? t : start; // never floor scoring in the future
 }
 
 // ======================================================================

@@ -23,5 +23,8 @@ export async function GET() {
     return NextResponse.json({ error: "token request failed" }, { status: 502 });
   }
   const { token } = await r.json();
+  if (!token) {
+    return NextResponse.json({ error: "no token from upstream" }, { status: 502 });
+  }
   return NextResponse.json({ token });
 }

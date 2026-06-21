@@ -6,7 +6,7 @@
     "dev": "next dev --port 3005 -H 127.0.0.1",
     "build": "next build",
     "start": "next start --port 3005",
-    "test": "tsx lib/score.test.ts"
+    "test": "tsx lib/score.test.ts && tsx lib/home-cadence.test.ts && tsx lib/home-sql.test.ts"
   },
   "dependencies": {
     "@elevenlabs/react": "^1.7.0",
