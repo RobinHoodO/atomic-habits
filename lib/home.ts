@@ -26,6 +26,7 @@ export interface Chore {
   assignee_user_id: number | null;
   rotating: number;
   conditional_note: string | null;
+  standard: string | null;
   active: number;
 }
 export interface HomeTask {
@@ -116,6 +117,7 @@ export interface ChoreInput {
   assignee_user_id: number | null;
   rotating: boolean;
   conditional_note: string | null;
+  standard: string | null;
 }
 
 export function listChores(homeId: number): Chore[] {
@@ -136,8 +138,8 @@ export function addChore(homeId: number, userId: number, input: ChoreInput): num
   return Number(
     getDb()
       .prepare(
-        `INSERT INTO chores (home_id, title, area, cadence, points, assignee_user_id, rotating, conditional_note)
-         VALUES (@home_id, @title, @area, @cadence, @points, @assignee_user_id, @rotating, @conditional_note)`,
+        `INSERT INTO chores (home_id, title, area, cadence, points, assignee_user_id, rotating, conditional_note, standard)
+         VALUES (@home_id, @title, @area, @cadence, @points, @assignee_user_id, @rotating, @conditional_note, @standard)`,
       )
       .run({
         home_id: homeId,
@@ -148,6 +150,7 @@ export function addChore(homeId: number, userId: number, input: ChoreInput): num
         assignee_user_id: input.assignee_user_id,
         rotating: input.rotating ? 1 : 0,
         conditional_note: input.conditional_note,
+        standard: input.standard,
       }).lastInsertRowid,
   );
 }
@@ -157,7 +160,8 @@ export function updateChore(choreId: number, userId: number, input: ChoreInput):
   getDb()
     .prepare(
       `UPDATE chores SET title=@title, area=@area, cadence=@cadence, points=@points,
-       assignee_user_id=@assignee_user_id, rotating=@rotating, conditional_note=@conditional_note WHERE id=@id`,
+       assignee_user_id=@assignee_user_id, rotating=@rotating, conditional_note=@conditional_note,
+       standard=@standard WHERE id=@id`,
     )
     .run({
       id: choreId,
@@ -168,6 +172,7 @@ export function updateChore(choreId: number, userId: number, input: ChoreInput):
       assignee_user_id: input.assignee_user_id,
       rotating: input.rotating ? 1 : 0,
       conditional_note: input.conditional_note,
+      standard: input.standard,
     });
 }
 

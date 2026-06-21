@@ -57,6 +57,7 @@ function parseChore(fd: FormData): ChoreInput {
     assignee_user_id: assigneeRaw ? Number(assigneeRaw) : null,
     rotating: str(fd, "rotating") === "1",
     conditional_note: str(fd, "conditional_note"),
+    standard: str(fd, "standard"),
   };
 }
 

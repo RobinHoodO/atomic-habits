@@ -155,6 +155,7 @@ CREATE TABLE IF NOT EXISTS chores (
   assignee_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL, -- NULL = open/whoever
   rotating         INTEGER NOT NULL DEFAULT 0,      -- 1 = ownership alternates each period
   conditional_note TEXT,                            -- "den som lagde mat" etc (display)
+  standard         TEXT,                            -- Minimum Standard of Care (Fair Play)
   active           INTEGER NOT NULL DEFAULT 1,
   created_at       TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -190,6 +191,7 @@ CREATE TABLE IF NOT EXISTS home_tasks (
 export function runMigrations(db: import("better-sqlite3").Database): void {
   const steps = [
     "ALTER TABLE contracts ADD COLUMN partner_user_id INTEGER REFERENCES users(id)",
+    "ALTER TABLE chores ADD COLUMN standard TEXT",
   ];
   for (const sql of steps) {
     try {

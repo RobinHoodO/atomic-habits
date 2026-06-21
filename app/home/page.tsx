@@ -9,7 +9,7 @@ import {
   pointsByMember,
   listTasks,
 } from "@/lib/home";
-import { dueFor, rotatingAssignee, cadenceLabel } from "@/lib/home-cadence";
+import { dueFor, rotatingAssignee, cadenceLabel, homeHealth } from "@/lib/home-cadence";
 import { todayStr, addDays } from "@/lib/score";
 import { createHomeAction, addMemberAction, seedStarterAction, logChoreAction } from "@/app/home-actions";
 import FairnessBar from "@/components/FairnessBar";
@@ -52,11 +52,16 @@ export default async function HomePage({
   const ids = memberIds(home.id);
   const nameOf = new Map(members.map((m) => [m.user_id, m.name]));
   const lastDone = lastDoneByChore(home.id);
+  const chores = listChores(home.id);
   const since30 = addDays(today, -29);
   const pts30 = pointsByMember(home.id, since30);
+  const health = homeHealth(
+    chores.map((c) => ({ cadence: c.cadence, lastDone: lastDone[c.id] ?? null })),
+    today,
+  );
 
   // build the "due now" list (overdue + due today), each with assignment context
-  const due = listChores(home.id)
+  const due = chores
     .map((c) => {
       const d = dueFor(c.cadence, lastDone[c.id] ?? null, today);
       let owner: string | null = null;
@@ -92,6 +97,27 @@ export default async function HomePage({
         </div>
       </header>
 
+      {/* cooperative goal: a shared "Hyggelig hjem" health meter (Tody-style) */}
+      {chores.length > 0 && (
+        <div className="card flex flex-col gap-2">
+          <div className="flex items-baseline justify-between">
+            <span className="text-sm font-semibold">Hyggelig hjem</span>
+            <span className="text-xs text-muted">
+              {health.onTrack}/{health.total} à jour · {Math.round(health.score * 100)}%
+            </span>
+          </div>
+          <div className="h-3 w-full overflow-hidden rounded-full bg-surface-2">
+            <div
+              className={`h-full rounded-full transition-all ${
+                health.score >= 0.8 ? "bg-good" : health.score >= 0.5 ? "bg-neutral" : "bg-bad"
+              }`}
+              style={{ width: `${Math.round(health.score * 100)}%` }}
+            />
+          </div>
+          <p className="text-xs text-muted">Et felles mål — vi holder hjemmet i orden sammen.</p>
+        </div>
+      )}
+
       <FairnessBar members={members} points={pts30} label="Fordeling — siste 30 dager" />
 
       {/* invite a partner */}
@@ -113,7 +139,7 @@ export default async function HomePage({
       {/* due now */}
       <section className="flex flex-col gap-3">
         <h2 className="text-sm font-semibold text-muted">Å gjøre nå</h2>
-        {listChores(home.id).length === 0 ? (
+        {chores.length === 0 ? (
           <div className="card flex flex-col items-start gap-3 text-sm text-muted">
             <span>No chores yet. Load your real list to get going in one click.</span>
             <form action={seedStarterAction}>
@@ -135,6 +161,7 @@ export default async function HomePage({
                   {c.area && <span>· {c.area}</span>}
                   {owner && <span>· {mine ? <strong className="text-foreground">din tur</strong> : owner}</span>}
                 </div>
+                {c.standard && <div className="mt-0.5 text-xs text-muted italic">📋 {c.standard}</div>}
               </div>
               <form action={logChoreAction} className="shrink-0">
                 <input type="hidden" name="id" value={c.id} />

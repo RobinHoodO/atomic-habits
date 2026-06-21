@@ -99,3 +99,30 @@ export function taskIsStale(createdAt: string, today = todayStr()): boolean {
   const created = createdAt.slice(0, 10);
   return daysBetween(created, today) >= 14;
 }
+
+// Tody-style "how due is it" signal: fraction of the cadence elapsed since last
+// done. <0.7 green (fresh), 0.7–1 amber (soon), >1 red (overdue). seasonal/adhoc
+// and never-done are handled by the caller; never-done counts as fully due.
+export type Urgency = "fresh" | "soon" | "overdue" | "none";
+
+export function urgency(cadence: Cadence, lastDone: string | null, today = todayStr()): Urgency {
+  const period = cadenceDays(cadence);
+  if (period === 0) return "none";
+  if (!lastDone) return "overdue";
+  const ratio = daysBetween(lastDone, today) / period;
+  if (ratio > 1) return "overdue";
+  if (ratio >= 0.7) return "soon";
+  return "fresh";
+}
+
+// Cooperative "home health": share of scheduled chores that are NOT overdue.
+// seasonal/adhoc chores are excluded (no automatic schedule). 1 = all on track.
+export function homeHealth(
+  items: { cadence: Cadence; lastDone: string | null }[],
+  today = todayStr(),
+): { score: number; onTrack: number; total: number } {
+  const scheduled = items.filter((i) => cadenceDays(i.cadence) > 0);
+  if (scheduled.length === 0) return { score: 1, onTrack: 0, total: 0 };
+  const onTrack = scheduled.filter((i) => urgency(i.cadence, i.lastDone, today) !== "overdue").length;
+  return { score: onTrack / scheduled.length, onTrack, total: scheduled.length };
+}

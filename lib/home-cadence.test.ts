@@ -7,6 +7,8 @@ import {
   fairness,
   taskIsStale,
   cadenceDays,
+  urgency,
+  homeHealth,
 } from "./home-cadence";
 
 const today = "2026-06-20";
@@ -66,5 +68,29 @@ assert.equal(taskIsStale("2026-06-10", today), false, "10 days → not stale");
 // --- cadence days sanity ---
 assert.equal(cadenceDays("daily"), 1);
 assert.equal(cadenceDays("annual"), 365);
+
+// --- urgency (Tody gradient) ---
+{
+  assert.equal(urgency("weekly", null, today), "overdue", "never done → overdue");
+  assert.equal(urgency("weekly", today, today), "fresh", "just done → fresh");
+  assert.equal(urgency("weekly", "2026-06-15", today), "soon", "5/7 elapsed → soon");
+  assert.equal(urgency("weekly", "2026-06-12", today), "overdue", "8/7 elapsed → overdue");
+  assert.equal(urgency("seasonal", "2026-01-01", today), "none", "seasonal → none");
+}
+
+// --- home health ---
+{
+  const h = homeHealth(
+    [
+      { cadence: "daily", lastDone: today }, // fresh
+      { cadence: "weekly", lastDone: "2026-06-01" }, // overdue
+      { cadence: "seasonal", lastDone: null }, // excluded
+    ],
+    today,
+  );
+  assert.equal(h.total, 2, "seasonal excluded");
+  assert.equal(h.onTrack, 1);
+  assert.equal(Math.round(h.score * 100), 50);
+}
 
 console.log("✓ all home-cadence checks passed");
