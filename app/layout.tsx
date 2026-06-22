@@ -31,7 +31,8 @@ export default async function RootLayout({
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
       <body className="min-h-screen">
         <Nav loggedIn={!!user} />
-        <main className="mx-auto max-w-3xl px-4 pt-8 pb-[max(2rem,env(safe-area-inset-bottom))]">{children}</main>
+        {/* extra bottom padding on mobile so content clears the fixed tab bar */}
+        <main className="mx-auto max-w-3xl px-4 pt-8 pb-[calc(5rem+env(safe-area-inset-bottom))] md:pb-8">{children}</main>
         <PWA />
       </body>
     </html>
