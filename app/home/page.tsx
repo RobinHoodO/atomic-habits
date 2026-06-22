@@ -30,8 +30,8 @@ export default async function HomePage({
     return (
       <div className="mx-auto flex max-w-md flex-col gap-4">
         <header>
-          <h1 className="text-xl font-bold">Vårt hjem</h1>
-          <p className="text-sm text-muted">
+          <h1 className="text-2xl font-bold tracking-tight">Vårt hjem</h1>
+          <p className="mt-1 text-sm leading-relaxed text-muted">
             A shared space for two. Co-design the chores, split them fairly, earn points
             for showing up — and keep the home (and the relationship) running smoothly.
           </p>
@@ -86,8 +86,8 @@ export default async function HomePage({
     <div className="flex flex-col gap-5">
       <header className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold">{home.name}</h1>
-          <p className="text-sm text-muted">{members.map((m) => m.name).join(" · ")}</p>
+          <h1 className="text-2xl font-bold tracking-tight">{home.name}</h1>
+          <p className="mt-0.5 text-sm text-muted">{members.map((m) => m.name).join(" · ")}</p>
         </div>
         <div className="flex gap-2 text-sm">
           <Link href="/home/chores" className="btn">Chores</Link>
@@ -106,9 +106,9 @@ export default async function HomePage({
               {health.onTrack}/{health.total} à jour · {Math.round(health.score * 100)}%
             </span>
           </div>
-          <div className="h-3 w-full overflow-hidden rounded-full bg-surface-2">
+          <div className="h-2.5 w-full overflow-hidden rounded-full bg-surface-2">
             <div
-              className={`h-full rounded-full transition-all ${
+              className={`h-full rounded-full transition-all duration-500 ease-out ${
                 health.score >= 0.8 ? "bg-good" : health.score >= 0.5 ? "bg-neutral" : "bg-bad"
               }`}
               style={{ width: `${Math.round(health.score * 100)}%` }}
@@ -138,7 +138,7 @@ export default async function HomePage({
 
       {/* due now */}
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-semibold text-muted">Å gjøre nå</h2>
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-muted">Å gjøre nå</h2>
         {chores.length === 0 ? (
           <div className="card flex flex-col items-start gap-3 text-sm text-muted">
             <span>No chores yet. Load your real list to get going in one click.</span>
@@ -150,11 +150,11 @@ export default async function HomePage({
           <div className="card text-sm text-muted">Alt er ajour 🎉 Nothing due right now.</div>
         ) : (
           due.map(({ c, d, owner, mine }) => (
-            <div key={c.id} className="card flex items-center justify-between gap-3 py-3">
+            <div key={c.id} className="card flex items-center justify-between gap-3 py-3 transition-colors hover:border-border-strong">
               <div className="min-w-0">
-                <div className="truncate font-medium">{c.title}</div>
-                <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-muted">
-                  <span className={d.state === "overdue" ? "text-bad" : "text-accent"}>
+                <div className="truncate font-medium tracking-tight">{c.title}</div>
+                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted">
+                  <span className={d.state === "overdue" ? "font-medium text-bad" : "font-medium text-accent"}>
                     {d.state === "overdue" ? `${-(d.daysLeft ?? 0)} d på overtid` : "i dag"}
                   </span>
                   <span>· {cadenceLabel(c.cadence)}</span>

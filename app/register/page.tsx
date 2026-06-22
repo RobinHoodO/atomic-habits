@@ -20,9 +20,9 @@ export default async function RegisterPage({
   const { error } = await searchParams;
 
   return (
-    <div className="mx-auto mt-10 max-w-sm">
-      <h1 className="text-2xl font-bold">Create your account</h1>
-      <p className="mt-1 text-sm text-muted">Start casting votes for who you want to become.</p>
+    <div className="mx-auto mt-12 max-w-sm sm:mt-16">
+      <h1 className="text-2xl font-bold tracking-tight">Create your account</h1>
+      <p className="mt-1.5 text-sm text-muted">Start casting votes for who you want to become.</p>
 
       {error && ERRORS[error] && (
         <p className="mt-4 rounded-md border border-bad/40 bg-bad/10 px-3 py-2 text-sm text-bad">
@@ -30,7 +30,7 @@ export default async function RegisterPage({
         </p>
       )}
 
-      <form action={registerAction} className="card mt-5 flex flex-col gap-4">
+      <form action={registerAction} className="card mt-6 flex flex-col gap-4 p-6">
         <div>
           <label className="label">Name</label>
           <input className="input" name="name" required autoComplete="name" />

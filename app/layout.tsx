@@ -31,7 +31,7 @@ export default async function RootLayout({
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
       <body className="min-h-screen">
         <Nav loggedIn={!!user} />
-        <main className="mx-auto max-w-3xl px-4 py-6 pb-[env(safe-area-inset-bottom)]">{children}</main>
+        <main className="mx-auto max-w-3xl px-4 pt-8 pb-[max(2rem,env(safe-area-inset-bottom))]">{children}</main>
         <PWA />
       </body>
     </html>

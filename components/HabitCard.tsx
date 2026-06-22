@@ -34,14 +34,14 @@ export default function HabitCard({
       : null;
 
   return (
-    <details open={!done} className="card group p-0">
+    <details open={!done} className="card group overflow-hidden p-0">
       <summary
         title={done ? "Tap to expand — undo or see stats" : "Tap to collapse"}
-        className="flex cursor-pointer list-none items-center gap-3 p-4 [&::-webkit-details-marker]:hidden"
+        className="flex cursor-pointer list-none items-center gap-3 rounded-[inherit] p-4 transition-colors hover:bg-surface-2/60 [&::-webkit-details-marker]:hidden"
       >
         <span
           aria-hidden
-          className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md border text-sm ${
+          className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md border text-sm transition-colors ${
             done ? "border-good bg-good/15 text-good" : "border-border text-transparent"
           }`}
         >
@@ -49,12 +49,12 @@ export default function HabitCard({
         </span>
         <span className="min-w-0 flex-1">
           <span
-            className={`block truncate font-semibold ${done ? "text-muted line-through" : ""}`}
+            className={`block truncate font-semibold tracking-tight ${done ? "text-muted line-through" : ""}`}
           >
             {habit.name}
           </span>
-          <span className="mt-0.5 flex flex-wrap items-center gap-2 text-xs">
-            <span className={`rounded border px-1.5 py-0.5 ${typeStyle[habit.type]}`}>
+          <span className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+            <span className={`rounded-full border px-2 py-0.5 font-medium ${typeStyle[habit.type]}`}>
               {habit.type === "good" ? "+" : habit.type === "bad" ? "−" : "="} {habit.type}
             </span>
             {identityName && <span className="text-muted">→ {identityName}</span>}

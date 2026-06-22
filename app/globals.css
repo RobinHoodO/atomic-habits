@@ -10,15 +10,20 @@
   --surface: #ffffff;
   --surface-2: #f4f5f8;
   --border: #e8eaf0;
+  --border-strong: #dcdfe8; /* hairline for hover/active states */
   --foreground: #16181d;
   --muted: #6b7280;
   --good: #16a34a;
   --bad: #e1483d;
   --neutral: #9aa1ad;
   --accent: #4f46e5;
+  --accent-hover: #4338ca;
   --accent-soft: #eef0fe;
   --radius: 0.9rem;
-  --shadow: 0 1px 2px rgba(16, 18, 25, 0.04), 0 6px 20px rgba(16, 18, 25, 0.05);
+  /* Two-tier shadow: sm for resting cards, default for hover/raised surfaces.
+     Layered, low-opacity, tinted with the foreground hue so depth reads warm, not grey. */
+  --shadow-sm: 0 1px 2px rgba(16, 18, 25, 0.04), 0 1px 1px rgba(16, 18, 25, 0.03);
+  --shadow: 0 1px 2px rgba(16, 18, 25, 0.04), 0 8px 24px -6px rgba(16, 18, 25, 0.08);
 }
 
 @theme inline {
@@ -26,12 +31,14 @@
   --color-surface: var(--surface);
   --color-surface-2: var(--surface-2);
   --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
   --color-foreground: var(--foreground);
   --color-muted: var(--muted);
   --color-good: var(--good);
   --color-bad: var(--bad);
   --color-neutral: var(--neutral);
   --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -41,6 +48,21 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans), system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Tighter, more confident headings — set the type hierarchy globally so every
+   page inherits the same rhythm instead of relying on per-page utilities. */
+h1, h2, h3 {
+  letter-spacing: -0.011em;
+  text-wrap: balance;
+}
+h1 { line-height: 1.15; }
+
+/* Restrained, brand-tinted text selection. */
+::selection {
+  background: var(--accent-soft);
+  color: var(--accent-hover);
 }
 
 @layer components {
@@ -49,8 +71,18 @@ body {
     border: 1px solid var(--border);
     border-radius: var(--radius);
     padding: 1.25rem;
-    box-shadow: var(--shadow);
+    box-shadow: var(--shadow-sm);
+    transition: box-shadow 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
   }
+
+  /* Opt-in elevation for cards that are themselves links/buttons. */
+  .card-link { cursor: pointer; }
+  .card-link:hover {
+    box-shadow: var(--shadow);
+    border-color: var(--border-strong);
+    transform: translateY(-1px);
+  }
+  .card-link:active { transform: translateY(0); box-shadow: var(--shadow-sm); }
 
   .btn {
     display: inline-flex;
@@ -63,22 +95,30 @@ body {
     border-radius: 0.6rem;
     padding: 0.5rem 0.9rem;
     font-size: 0.875rem;
-    font-weight: 500;
+    font-weight: 550;
     line-height: 1;
     cursor: pointer;
-    transition: border-color 0.15s, background 0.15s, opacity 0.15s, transform 0.05s;
+    box-shadow: var(--shadow-sm);
+    transition: border-color 0.15s, background 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.08s ease;
   }
-  .btn:hover { background: var(--surface-2); }
-  .btn:active { transform: translateY(0.5px); }
-  .btn:disabled { opacity: 0.45; cursor: not-allowed; }
-  .btn:disabled:hover { background: var(--surface); }
+  .btn:hover { background: var(--surface-2); border-color: var(--border-strong); }
+  .btn:active { transform: translateY(1px); box-shadow: none; }
+  .btn:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px var(--accent-soft);
+    border-color: var(--accent);
+  }
+  .btn:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; }
+  .btn:disabled:hover { background: var(--surface); border-color: var(--border); }
 
   .btn-primary {
     background: var(--accent);
     color: #ffffff;
     border-color: var(--accent);
+    box-shadow: 0 1px 2px rgba(79, 70, 229, 0.25), 0 2px 8px -2px rgba(79, 70, 229, 0.35);
   }
-  .btn-primary:hover { background: #4338ca; }
+  .btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+  .btn-primary:active { box-shadow: 0 1px 2px rgba(79, 70, 229, 0.25); }
 
   .input, .select, .textarea {
     width: 100%;
@@ -86,10 +126,12 @@ body {
     border: 1px solid var(--border);
     color: var(--foreground);
     border-radius: 0.6rem;
-    padding: 0.55rem 0.75rem;
+    padding: 0.6rem 0.8rem;
     font-size: 16px; /* >=16px stops iOS Safari zooming in on focus */
+    line-height: 1.4;
     transition: border-color 0.15s, box-shadow 0.15s;
   }
+  .input:hover, .select:hover, .textarea:hover { border-color: var(--border-strong); }
   .input:focus, .select:focus, .textarea:focus {
     outline: none;
     border-color: var(--accent);
@@ -100,9 +142,10 @@ body {
   .label {
     display: block;
     font-size: 0.78rem;
-    font-weight: 500;
+    font-weight: 550;
+    letter-spacing: 0.005em;
     color: var(--muted);
-    margin-bottom: 0.3rem;
+    margin-bottom: 0.35rem;
   }
 
   .req::after { content: " *"; color: var(--bad); }

@@ -15,9 +15,9 @@ export default async function LoginPage({
   const { error } = await searchParams;
 
   return (
-    <div className="mx-auto mt-10 max-w-sm">
-      <h1 className="text-2xl font-bold">Welcome back</h1>
-      <p className="mt-1 text-sm text-muted">Sign in to your habits.</p>
+    <div className="mx-auto mt-12 max-w-sm sm:mt-16">
+      <h1 className="text-2xl font-bold tracking-tight">Welcome back</h1>
+      <p className="mt-1.5 text-sm text-muted">Sign in to your habits.</p>
 
       {error && (
         <p className="mt-4 rounded-md border border-bad/40 bg-bad/10 px-3 py-2 text-sm text-bad">
@@ -25,7 +25,7 @@ export default async function LoginPage({
         </p>
       )}
 
-      <form action={loginAction} className="card mt-5 flex flex-col gap-4">
+      <form action={loginAction} className="card mt-6 flex flex-col gap-4 p-6">
         <div>
           <label className="label">Email</label>
           <input className="input" type="email" name="email" required autoComplete="email" />

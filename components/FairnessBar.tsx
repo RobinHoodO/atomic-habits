@@ -25,11 +25,11 @@ export default function FairnessBar({
         <span className="text-sm font-semibold">{label ?? "Fordeling"}</span>
         <span className="text-xs text-muted">{verdict}</span>
       </div>
-      <div className="flex h-3 w-full overflow-hidden rounded-full bg-surface-2">
+      <div className="flex h-2.5 w-full gap-0.5 overflow-hidden rounded-full bg-surface-2">
         {members.map((m, i) => (
           <div
             key={m.user_id}
-            className={`${SEG[i % SEG.length]} h-full transition-all`}
+            className={`${SEG[i % SEG.length]} h-full transition-all duration-500 ease-out first:rounded-l-full last:rounded-r-full`}
             style={{ width: `${Math.round((shares[m.user_id] ?? 0) * 100)}%` }}
             title={`${m.name}: ${points[m.user_id] ?? 0} p`}
           />

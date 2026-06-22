@@ -26,11 +26,11 @@ export default function Nav({ loggedIn }: { loggedIn: boolean }) {
 
   if (!loggedIn) {
     return (
-      <nav className="border-b border-border bg-surface">
-        <div className="mx-auto flex max-w-3xl items-center gap-4 px-4 py-3 text-sm">
-          <Link href="/" className="font-semibold text-accent">⚛ Atomic Habits</Link>
-          <Link href="/learn" className="text-muted hover:text-foreground">Learn</Link>
-          <Link href="/login" className="ml-auto text-muted hover:text-foreground">Sign in</Link>
+      <nav className="sticky top-0 z-30 border-b border-border bg-surface/80 backdrop-blur-md backdrop-saturate-150">
+        <div className="mx-auto flex max-w-3xl items-center gap-5 px-4 py-3 text-sm">
+          <Link href="/" className="font-semibold tracking-tight text-accent transition-opacity hover:opacity-80">⚛ Atomic Habits</Link>
+          <Link href="/learn" className="text-muted transition-colors hover:text-foreground">Learn</Link>
+          <Link href="/login" className="ml-auto text-muted transition-colors hover:text-foreground">Sign in</Link>
           <Link href="/register" className="btn btn-primary">Get started</Link>
         </div>
       </nav>
@@ -38,17 +38,22 @@ export default function Nav({ loggedIn }: { loggedIn: boolean }) {
   }
 
   return (
-    <nav className="border-b border-border bg-surface">
-      <div className="mx-auto flex max-w-3xl items-center gap-4 px-4 py-3 text-sm">
-        <Link href="/" className="font-semibold text-accent">⚛ Atomic Habits</Link>
+    <nav className="sticky top-0 z-30 border-b border-border bg-surface/80 backdrop-blur-md backdrop-saturate-150">
+      <div className="mx-auto flex max-w-3xl items-center gap-5 px-4 py-3 text-sm">
+        <Link href="/" className="font-semibold tracking-tight text-accent transition-opacity hover:opacity-80">⚛ Atomic Habits</Link>
 
         {/* inline links — desktop */}
-        <div className="hidden items-center gap-4 md:flex">
+        <div className="hidden items-center gap-1 md:flex">
           {LINKS.map((l) => (
             <Link
               key={l.href}
               href={l.href}
-              className={pathname === l.href ? "text-foreground" : "text-muted hover:text-foreground"}
+              aria-current={pathname === l.href ? "page" : undefined}
+              className={`rounded-md px-2 py-1 transition-colors ${
+                pathname === l.href
+                  ? "bg-accent-soft font-medium text-accent"
+                  : "text-muted hover:bg-surface-2 hover:text-foreground"
+              }`}
             >
               {l.label}
             </Link>
@@ -58,7 +63,7 @@ export default function Nav({ loggedIn }: { loggedIn: boolean }) {
         <div className="ml-auto flex items-center gap-3">
           <Link href="/habits/new" className="btn btn-primary whitespace-nowrap">+ New</Link>
           <form action={logoutAction} className="hidden md:block">
-            <button className="text-muted hover:text-foreground">Sign out</button>
+            <button className="text-muted transition-colors hover:text-foreground">Sign out</button>
           </form>
           {/* hamburger — mobile only */}
           <button
@@ -79,8 +84,11 @@ export default function Nav({ loggedIn }: { loggedIn: boolean }) {
             <Link
               key={l.href}
               href={l.href}
-              className={`rounded-md px-2 py-2 ${
-                pathname === l.href ? "bg-surface-2 text-foreground" : "text-muted hover:bg-surface-2"
+              aria-current={pathname === l.href ? "page" : undefined}
+              className={`rounded-md px-2.5 py-2 transition-colors ${
+                pathname === l.href
+                  ? "bg-accent-soft font-medium text-accent"
+                  : "text-muted hover:bg-surface-2 hover:text-foreground"
               }`}
             >
               {l.label}
