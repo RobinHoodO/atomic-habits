@@ -38,8 +38,8 @@ function int(fd: FormData, k: string): number {
   return Number(str(fd, k));
 }
 // The acting user's home, or throw — every chore/task action is home-scoped.
-function requireHomeId(userId: number): number {
-  const h = homeForUser(userId);
+async function requireHomeId(userId: number): Promise<number> {
+  const h = await homeForUser(userId);
   if (!h) throw new Error("no home");
   return h.id;
 }
@@ -64,15 +64,15 @@ function parseChore(fd: FormData): ChoreInput {
 // ===== home setup =====
 export async function createHomeAction(fd: FormData) {
   const user = await requireUser();
-  if (homeForUser(user.id)) redirect("/home"); // already has one
-  createHome(user.id, reqStr(fd, "name"));
+  if (await homeForUser(user.id)) redirect("/home"); // already has one
+  await createHome(user.id, reqStr(fd, "name"));
   revalidatePath("/home");
   redirect("/home");
 }
 
 export async function seedStarterAction() {
   const user = await requireUser();
-  seedStarter(requireHomeId(user.id), user.id);
+  await seedStarter(await requireHomeId(user.id), user.id);
   revalidatePath("/home");
   revalidatePath("/home/chores");
   redirect("/home/chores");
@@ -80,7 +80,7 @@ export async function seedStarterAction() {
 
 export async function addMemberAction(fd: FormData) {
   const user = await requireUser();
-  const res = addMemberByEmail(requireHomeId(user.id), user.id, reqStr(fd, "email"));
+  const res = await addMemberByEmail(await requireHomeId(user.id), user.id, reqStr(fd, "email"));
   revalidatePath("/home");
   redirect(`/home?invite=${res}`);
 }
@@ -88,28 +88,28 @@ export async function addMemberAction(fd: FormData) {
 // ===== chores =====
 export async function addChoreAction(fd: FormData) {
   const user = await requireUser();
-  addChore(requireHomeId(user.id), user.id, parseChore(fd));
+  await addChore(await requireHomeId(user.id), user.id, parseChore(fd));
   revalidatePath("/home");
   revalidatePath("/home/chores");
 }
 
 export async function updateChoreAction(fd: FormData) {
   const user = await requireUser();
-  updateChore(int(fd, "id"), user.id, parseChore(fd));
+  await updateChore(int(fd, "id"), user.id, parseChore(fd));
   revalidatePath("/home");
   revalidatePath("/home/chores");
 }
 
 export async function deleteChoreAction(fd: FormData) {
   const user = await requireUser();
-  deleteChore(int(fd, "id"), user.id);
+  await deleteChore(int(fd, "id"), user.id);
   revalidatePath("/home");
   revalidatePath("/home/chores");
 }
 
 export async function logChoreAction(fd: FormData) {
   const user = await requireUser();
-  logChore(int(fd, "id"), user.id);
+  await logChore(int(fd, "id"), user.id);
   revalidatePath("/home");
   revalidatePath("/home/chores");
 }
@@ -118,20 +118,20 @@ export async function logChoreAction(fd: FormData) {
 export async function addTaskAction(fd: FormData) {
   const user = await requireUser();
   const pts = str(fd, "points");
-  addTask(requireHomeId(user.id), user.id, reqStr(fd, "title"), pts ? Math.max(0, Number(pts)) : 5);
+  await addTask(await requireHomeId(user.id), user.id, reqStr(fd, "title"), pts ? Math.max(0, Number(pts)) : 5);
   revalidatePath("/home/tasks");
   revalidatePath("/home");
 }
 
 export async function completeTaskAction(fd: FormData) {
   const user = await requireUser();
-  completeTask(int(fd, "id"), user.id);
+  await completeTask(int(fd, "id"), user.id);
   revalidatePath("/home/tasks");
   revalidatePath("/home");
 }
 
 export async function deleteTaskAction(fd: FormData) {
   const user = await requireUser();
-  deleteTask(int(fd, "id"), user.id);
+  await deleteTask(int(fd, "id"), user.id);
   revalidatePath("/home/tasks");
 }

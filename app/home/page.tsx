@@ -22,7 +22,7 @@ export default async function HomePage({
   searchParams: Promise<{ invite?: string }>;
 }) {
   const user = await requireUser();
-  const home = homeForUser(user.id);
+  const home = await homeForUser(user.id);
   const { invite } = await searchParams;
 
   // ---- no home yet: create one ----
@@ -48,13 +48,13 @@ export default async function HomePage({
   }
 
   const today = todayStr();
-  const members = homeMembers(home.id);
-  const ids = memberIds(home.id);
+  const members = await homeMembers(home.id);
+  const ids = await memberIds(home.id);
   const nameOf = new Map(members.map((m) => [m.user_id, m.name]));
-  const lastDone = lastDoneByChore(home.id);
-  const chores = listChores(home.id);
+  const lastDone = await lastDoneByChore(home.id);
+  const chores = await listChores(home.id);
   const since30 = addDays(today, -29);
-  const pts30 = pointsByMember(home.id, since30);
+  const pts30 = await pointsByMember(home.id, since30);
   const health = homeHealth(
     chores.map((c) => ({ cadence: c.cadence, lastDone: lastDone[c.id] ?? null })),
     today,
@@ -80,7 +80,7 @@ export default async function HomePage({
     .filter((x) => x.d.state === "overdue" || x.d.state === "due")
     .sort((a, b) => (a.d.daysLeft ?? 0) - (b.d.daysLeft ?? 0));
 
-  const openTasks = listTasks(home.id).filter((t) => !t.done_at).length;
+  const openTasks = (await listTasks(home.id)).filter((t) => !t.done_at).length;
 
   return (
     <div className="flex flex-col gap-5">

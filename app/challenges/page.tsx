@@ -14,8 +14,17 @@ export const dynamic = "force-dynamic";
 export default async function ChallengesPage() {
   const user = await requireUser();
   const today = todayStr();
-  const connections = listConnections(user.id);
-  const challenges = listChallenges(user.id);
+  const connections = await listConnections(user.id);
+  const challenges = await listChallenges(user.id);
+  const challengeRows = await Promise.all(
+    challenges.map(async (ch) => ({
+      ch,
+      aName: (await getUserById(ch.a_user_id))?.name ?? "?",
+      bName: (await getUserById(ch.b_user_id))?.name ?? "?",
+      aScore: await checkinsBetween(ch.a_user_id, ch.starts_on, ch.ends_on),
+      bScore: await checkinsBetween(ch.b_user_id, ch.starts_on, ch.ends_on),
+    })),
+  );
 
   return (
     <div className="flex flex-col gap-5">
@@ -51,11 +60,7 @@ export default async function ChallengesPage() {
       )}
 
       {/* list */}
-      {challenges.map((ch) => {
-        const aName = getUserById(ch.a_user_id)?.name ?? "?";
-        const bName = getUserById(ch.b_user_id)?.name ?? "?";
-        const aScore = checkinsBetween(ch.a_user_id, ch.starts_on, ch.ends_on);
-        const bScore = checkinsBetween(ch.b_user_id, ch.starts_on, ch.ends_on);
+      {challengeRows.map(({ ch, aName, bName, aScore, bScore }) => {
         const finished = ch.status === "active" && today > ch.ends_on;
         const iAmB = ch.b_user_id === user.id;
         const lead = aScore === bScore ? "tie" : aScore > bScore ? aName : bName;

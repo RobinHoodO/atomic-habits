@@ -16,22 +16,24 @@ export const dynamic = "force-dynamic";
 export default async function TodayPage() {
   const user = await requireUser();
   const today = todayStr();
-  const habits = listHabits(user.id);
-  const identities = listIdentities(user.id);
+  const habits = await listHabits(user.id);
+  const identities = await listIdentities(user.id);
   // Only greet true cold-starts with the wizard. A returning user who archived
   // everything sees the Today empty state instead of a redirect loop.
   if (habits.length === 0 && identities.length === 0) redirect("/onboarding");
   const identityName = new Map(identities.map((i) => [i.id, i.name]));
 
-  const rows = habits.map((h) => {
-    const stats = statsFor(h, user.id, today);
-    return {
-      habit: h,
-      stats,
-      done: isDone(h.id, user.id, today),
-      scheduledToday: isScheduledDay(today, parseSchedule(h.schedule)),
-    };
-  });
+  const rows = await Promise.all(
+    habits.map(async (h) => {
+      const stats = await statsFor(h, user.id, today);
+      return {
+        habit: h,
+        stats,
+        done: await isDone(h.id, user.id, today),
+        scheduledToday: isScheduledDay(today, parseSchedule(h.schedule)),
+      };
+    }),
+  );
 
   // due (scheduled, not done) first → then done today → then off-schedule
   const rank = (r: (typeof rows)[number]) =>

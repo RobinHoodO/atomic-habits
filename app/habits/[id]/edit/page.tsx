@@ -17,12 +17,12 @@ export default async function EditHabitPage({
   const { id } = await params;
   let habit;
   try {
-    habit = getHabit(Number(id), user.id);
+    habit = await getHabit(Number(id), user.id);
   } catch (e) {
     if (e instanceof AuthzError) notFound();
     throw e;
   }
-  const identities = listIdentities(user.id);
+  const identities = await listIdentities(user.id);
 
   return (
     <div className="flex flex-col gap-4">

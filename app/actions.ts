@@ -109,7 +109,7 @@ export async function logoutAction() {
 
 export async function createIdentityAction(fd: FormData) {
   const user = await requireUser();
-  createIdentity(user.id, reqStr(fd, "name"), reqStr(fd, "statement"));
+  await createIdentity(user.id, reqStr(fd, "name"), reqStr(fd, "statement"));
   revalidatePath("/identities");
   redirect("/identities");
 }
@@ -118,7 +118,7 @@ export async function createIdentityAction(fd: FormData) {
 
 export async function createHabitAction(fd: FormData) {
   const user = await requireUser();
-  const id = createHabit(user.id, parseHabitInput(fd));
+  const id = await createHabit(user.id, parseHabitInput(fd));
   revalidatePath("/");
   revalidatePath("/habits");
   redirect(`/habits/${id}`);
@@ -127,7 +127,7 @@ export async function createHabitAction(fd: FormData) {
 export async function updateHabitAction(fd: FormData) {
   const user = await requireUser();
   const id = num(fd, "id");
-  updateHabit(id, user.id, parseHabitInput(fd));
+  await updateHabit(id, user.id, parseHabitInput(fd));
   revalidatePath("/");
   revalidatePath("/habits");
   redirect(`/habits/${id}`);
@@ -135,7 +135,7 @@ export async function updateHabitAction(fd: FormData) {
 
 export async function archiveHabitAction(fd: FormData) {
   const user = await requireUser();
-  setArchived(num(fd, "id"), user.id, str(fd, "archived") === "1");
+  await setArchived(num(fd, "id"), user.id, str(fd, "archived") === "1");
   revalidatePath("/");
   revalidatePath("/habits");
   redirect("/habits");
@@ -148,8 +148,8 @@ export async function toggleCompletionAction(fd: FormData) {
   // to today so a garbage value can't corrupt streak math.
   const raw = str(fd, "date");
   const date = raw && /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : todayStr();
-  toggleCompletion(habitId, user.id, date, str(fd, "is_gateway") === "1");
-  unlockBadges(user.id);
+  await toggleCompletion(habitId, user.id, date, str(fd, "is_gateway") === "1");
+  await unlockBadges(user.id);
   revalidatePath("/");
   revalidatePath(`/habits/${habitId}`);
   revalidatePath("/progress");
@@ -161,16 +161,16 @@ export async function addStackAction(fd: FormData) {
   const user = await requireUser();
   const anchor = num(fd, "anchor_habit_id");
   const stacked = num(fd, "stacked_habit_id");
-  assertCanEdit(anchor, user.id);
-  assertCanEdit(stacked, user.id);
-  addStack(anchor, stacked);
+  await assertCanEdit(anchor, user.id);
+  await assertCanEdit(stacked, user.id);
+  await addStack(anchor, stacked);
   revalidatePath(`/habits/${num(fd, "from")}`);
 }
 
 export async function removeStackAction(fd: FormData) {
   const user = await requireUser();
-  assertCanEdit(num(fd, "from"), user.id);
-  removeStack(num(fd, "id"));
+  await assertCanEdit(num(fd, "from"), user.id);
+  await removeStack(num(fd, "id"));
   revalidatePath(`/habits/${num(fd, "from")}`);
 }
 
@@ -179,53 +179,53 @@ export async function removeStackAction(fd: FormData) {
 export async function addBundleAction(fd: FormData) {
   const user = await requireUser();
   const habitId = num(fd, "habit_id");
-  assertCanEdit(habitId, user.id);
-  addBundle(habitId, reqStr(fd, "want_text"));
+  await assertCanEdit(habitId, user.id);
+  await addBundle(habitId, reqStr(fd, "want_text"));
   revalidatePath(`/habits/${habitId}`);
 }
 
 export async function removeBundleAction(fd: FormData) {
   const user = await requireUser();
   const habitId = num(fd, "habit_id");
-  assertCanEdit(habitId, user.id);
-  removeBundle(num(fd, "id"));
+  await assertCanEdit(habitId, user.id);
+  await removeBundle(num(fd, "id"));
   revalidatePath(`/habits/${habitId}`);
 }
 
 export async function addEnvItemAction(fd: FormData) {
   const user = await requireUser();
   const habitId = num(fd, "habit_id");
-  assertCanEdit(habitId, user.id);
+  await assertCanEdit(habitId, user.id);
   const kind = str(fd, "kind") === "friction" ? "friction" : "obvious";
-  addEnvItem(habitId, reqStr(fd, "text"), kind);
+  await addEnvItem(habitId, reqStr(fd, "text"), kind);
   revalidatePath(`/habits/${habitId}`);
 }
 
 export async function removeEnvItemAction(fd: FormData) {
   const user = await requireUser();
   const habitId = num(fd, "habit_id");
-  assertCanEdit(habitId, user.id);
-  removeEnvItem(num(fd, "id"));
+  await assertCanEdit(habitId, user.id);
+  await removeEnvItem(num(fd, "id"));
   revalidatePath(`/habits/${habitId}`);
 }
 
 export async function saveContractAction(fd: FormData) {
   const user = await requireUser();
   const habitId = num(fd, "habit_id");
-  const habit = assertCanEdit(habitId, user.id);
+  const habit = await assertCanEdit(habitId, user.id);
 
   const partnerRaw = str(fd, "partner_user_id");
   let partnerId = partnerRaw ? Number(partnerRaw) : null;
   // only accept a partner the owner is actually connected to — a crafted POST
   // can't pin a stranger as your accountability partner.
-  if (partnerId && !areConnected(user.id, partnerId)) partnerId = null;
+  if (partnerId && !(await areConnected(user.id, partnerId))) partnerId = null;
   let partnerName = str(fd, "partner_name");
   if (partnerId) {
-    const u = getUserById(partnerId);
+    const u = await getUserById(partnerId);
     if (u) partnerName = u.name;
   }
 
-  upsertContract({
+  await upsertContract({
     habit_id: habitId,
     commitment: reqStr(fd, "commitment"),
     stake: str(fd, "stake"),
@@ -239,9 +239,9 @@ export async function saveContractAction(fd: FormData) {
     partnerId &&
     habit.owner_id === user.id &&
     habit.visibility === "connections" &&
-    areConnected(user.id, partnerId)
+    (await areConnected(user.id, partnerId))
   ) {
-    addPartner(habitId, user.id, partnerId);
+    await addPartner(habitId, user.id, partnerId);
   }
 
   revalidatePath(`/habits/${habitId}`);
@@ -252,21 +252,21 @@ export async function saveContractAction(fd: FormData) {
 
 export async function requestConnectionAction(fd: FormData) {
   const user = await requireUser();
-  requestConnection(user.id, reqStr(fd, "email"));
+  await requestConnection(user.id, reqStr(fd, "email"));
   revalidatePath("/people");
   redirect("/people");
 }
 
 export async function acceptConnectionAction(fd: FormData) {
   const user = await requireUser();
-  acceptConnection(num(fd, "id"), user.id);
+  await acceptConnection(num(fd, "id"), user.id);
   revalidatePath("/people");
 }
 
 export async function addPartnerAction(fd: FormData) {
   const user = await requireUser();
   const habitId = num(fd, "habit_id");
-  addPartner(habitId, user.id, num(fd, "partner_id"));
+  await addPartner(habitId, user.id, num(fd, "partner_id"));
   revalidatePath(`/habits/${habitId}`);
 }
 
@@ -274,21 +274,21 @@ export async function addPartnerAction(fd: FormData) {
 
 export async function createChallengeAction(fd: FormData) {
   const user = await requireUser();
-  createChallenge(user.id, num(fd, "to_user_id"), num(fd, "days"));
+  await createChallenge(user.id, num(fd, "to_user_id"), num(fd, "days"));
   revalidatePath("/challenges");
   redirect("/challenges");
 }
 
 export async function respondChallengeAction(fd: FormData) {
   const user = await requireUser();
-  respondChallenge(num(fd, "id"), user.id, str(fd, "accept") === "1");
+  await respondChallenge(num(fd, "id"), user.id, str(fd, "accept") === "1");
   revalidatePath("/challenges");
 }
 
 export async function useFreezeAction(fd: FormData) {
   const user = await requireUser();
   const habitId = num(fd, "habit_id");
-  spendFreeze(habitId, user.id, reqStr(fd, "date"));
+  await spendFreeze(habitId, user.id, reqStr(fd, "date"));
   revalidatePath("/");
   revalidatePath(`/habits/${habitId}`);
   revalidatePath("/progress");
@@ -302,9 +302,9 @@ export async function onboardingAction(fd: FormData) {
   const idName = str(fd, "identity_name");
   const idStatement = str(fd, "identity_statement");
   const identityId =
-    idName && idStatement ? createIdentity(user.id, idName, idStatement) : null;
+    idName && idStatement ? await createIdentity(user.id, idName, idStatement) : null;
 
-  createHabit(user.id, {
+  await createHabit(user.id, {
     name: reqStr(fd, "name"),
     type: (str(fd, "type") ?? "good") as HabitType,
     identity_id: identityId,

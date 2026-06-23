@@ -79,12 +79,12 @@ export default async function ChoresPage({
   searchParams: Promise<{ view?: string }>;
 }) {
   const user = await requireUser();
-  const home = homeForUser(user.id);
+  const home = await homeForUser(user.id);
   if (!home) redirect("/home");
 
-  const members = homeMembers(home.id);
-  const chores = listChores(home.id);
-  const lastDone = lastDoneByChore(home.id);
+  const members = await homeMembers(home.id);
+  const chores = await listChores(home.id);
+  const lastDone = await lastDoneByChore(home.id);
   const today = todayStr();
   const view = (await searchParams).view === "area" ? "area" : "cadence";
 

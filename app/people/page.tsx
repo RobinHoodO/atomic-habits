@@ -19,12 +19,24 @@ export const dynamic = "force-dynamic";
 export default async function PeoplePage() {
   const user = await requireUser();
   const today = todayStr();
-  const connections = listConnections(user.id);
-  const incoming = pendingIncoming(user.id);
-  const backing = listBacking(user.id).map((b) => ({
-    ...b,
-    stats: statsFor(b.habit, b.habit.owner_id, today),
-  }));
+  const connections = await listConnections(user.id);
+  const incoming = await pendingIncoming(user.id);
+  const backing = await Promise.all(
+    (await listBacking(user.id)).map(async (b) => ({
+      ...b,
+      stats: await statsFor(b.habit, b.habit.owner_id, today),
+    })),
+  );
+  // each connection + their visible habits with stats, precomputed (async)
+  const connectionBlocks = await Promise.all(
+    connections.map(async (c) => {
+      const habits = await visibleHabitsOf(c.user_id, user.id);
+      const withStats = await Promise.all(
+        habits.map(async (h) => ({ h, s: await statsFor(h, c.user_id, today) })),
+      );
+      return { c, withStats };
+    }),
+  );
 
   return (
     <div className="flex flex-col gap-5">
@@ -96,17 +108,15 @@ export default async function PeoplePage() {
           <span>Add someone by email above (they need an account too). Once connected you can follow each other’s habits, pair up on a shared one, and run check-in challenges.</span>
         </div>
       ) : (
-        connections.map((c) => {
-          const habits = visibleHabitsOf(c.user_id, user.id);
+        connectionBlocks.map(({ c, withStats }) => {
           return (
             <section key={c.user_id} className="card">
               <h2 className="font-semibold">{c.name}</h2>
-              {habits.length === 0 ? (
+              {withStats.length === 0 ? (
                 <p className="mt-1 text-sm text-muted">No shared habits.</p>
               ) : (
                 <ul className="mt-2 flex flex-col gap-1 text-sm">
-                  {habits.map((h) => {
-                    const s = statsFor(h, c.user_id, today);
+                  {withStats.map(({ h, s }) => {
                     return (
                       <li key={h.id} className="flex items-center justify-between rounded border border-border bg-surface-2 px-3 py-1.5">
                         <span>{h.name}</span>

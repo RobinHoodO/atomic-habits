@@ -1,7 +1,6 @@
 import "server-only";
-import { getDb } from "./db";
+import { dbGet, dbAll, dbRun } from "./db";
 import { AuthzError } from "./habits";
-import { getUserById } from "./users";
 import { todayStr, addDays } from "./score";
 import { cadencePoints, type Cadence } from "./home-cadence";
 
@@ -41,70 +40,69 @@ export interface HomeTask {
 }
 
 // ===== membership / authz =====
-export function isHomeMember(homeId: number, userId: number): boolean {
-  return !!getDb()
-    .prepare(`SELECT 1 FROM home_members WHERE home_id = ? AND user_id = ?`)
-    .get(homeId, userId);
+export async function isHomeMember(homeId: number, userId: number): Promise<boolean> {
+  return !!(await dbGet(
+    `SELECT 1 FROM home_members WHERE home_id = ? AND user_id = ?`,
+    [homeId, userId],
+  ));
 }
-export function assertHomeMember(homeId: number, userId: number): void {
-  if (!isHomeMember(homeId, userId)) throw new AuthzError("not a member of this home");
+export async function assertHomeMember(homeId: number, userId: number): Promise<void> {
+  if (!(await isHomeMember(homeId, userId))) throw new AuthzError("not a member of this home");
 }
 
 // The user's home (v1: a person belongs to one home; first wins).
-export function homeForUser(userId: number): Home | null {
+export async function homeForUser(userId: number): Promise<Home | null> {
   return (
-    (getDb()
-      .prepare(
-        `SELECT h.* FROM homes h JOIN home_members m ON m.home_id = h.id
+    (await dbGet<Home>(
+      `SELECT h.* FROM homes h JOIN home_members m ON m.home_id = h.id
          WHERE m.user_id = ? ORDER BY h.id LIMIT 1`,
-      )
-      .get(userId) as Home | undefined) ?? null
+      [userId],
+    )) ?? null
   );
 }
 
-export function createHome(userId: number, name: string): number {
-  const db = getDb();
-  const id = Number(
-    db.prepare(`INSERT INTO homes (name, created_by) VALUES (?, ?)`).run(name, userId)
-      .lastInsertRowid,
+export async function createHome(userId: number, name: string): Promise<number> {
+  const info = await dbRun(`INSERT INTO homes (name, created_by) VALUES (?, ?)`, [name, userId]);
+  const id = Number(info.lastInsertRowid);
+  await dbRun(
+    `INSERT OR IGNORE INTO home_members (home_id, user_id, role) VALUES (?, ?, 'owner')`,
+    [id, userId],
   );
-  db.prepare(`INSERT OR IGNORE INTO home_members (home_id, user_id, role) VALUES (?, ?, 'owner')`)
-    .run(id, userId);
   return id;
 }
 
-export function homeMembers(homeId: number): HomeMember[] {
-  return getDb()
-    .prepare(
-      `SELECT m.user_id, u.name, m.role FROM home_members m
+export async function homeMembers(homeId: number): Promise<HomeMember[]> {
+  return dbAll<HomeMember>(
+    `SELECT m.user_id, u.name, m.role FROM home_members m
        JOIN users u ON u.id = m.user_id WHERE m.home_id = ?
        ORDER BY (m.role = 'owner') DESC, u.name`,
-    )
-    .all(homeId) as HomeMember[];
+    [homeId],
+  );
 }
 
-export function memberIds(homeId: number): number[] {
-  return homeMembers(homeId)
-    .map((m) => m.user_id)
+export async function memberIds(homeId: number): Promise<number[]> {
+  return (await homeMembers(homeId))
+    .map((m) => Number(m.user_id))
     .sort((a, b) => a - b); // stable order for rotation
 }
 
 // Add another registered user (e.g. a partner) by email. Returns a status the
 // action can surface without leaking whether the email exists beyond "no account".
-export function addMemberByEmail(
+export async function addMemberByEmail(
   homeId: number,
   actingUserId: number,
   email: string,
-): "added" | "no-account" | "already" {
-  assertHomeMember(homeId, actingUserId);
-  const u = getDb()
-    .prepare(`SELECT id FROM users WHERE email = ?`)
-    .get(email.toLowerCase()) as { id: number } | undefined;
+): Promise<"added" | "no-account" | "already"> {
+  await assertHomeMember(homeId, actingUserId);
+  const u = await dbGet<{ id: number }>(`SELECT id FROM users WHERE email = ?`, [
+    email.toLowerCase(),
+  ]);
   if (!u) return "no-account";
-  if (isHomeMember(homeId, u.id)) return "already";
-  getDb()
-    .prepare(`INSERT OR IGNORE INTO home_members (home_id, user_id, role) VALUES (?, ?, 'member')`)
-    .run(homeId, u.id);
+  if (await isHomeMember(homeId, Number(u.id))) return "already";
+  await dbRun(
+    `INSERT OR IGNORE INTO home_members (home_id, user_id, role) VALUES (?, ?, 'member')`,
+    [homeId, Number(u.id)],
+  );
   return "added";
 }
 
@@ -120,50 +118,47 @@ export interface ChoreInput {
   standard: string | null;
 }
 
-export function listChores(homeId: number): Chore[] {
-  return getDb()
-    .prepare(`SELECT * FROM chores WHERE home_id = ? AND active = 1 ORDER BY id`)
-    .all(homeId) as Chore[];
-}
-
-export function getChore(choreId: number, userId: number): Chore {
-  const c = getDb().prepare(`SELECT * FROM chores WHERE id = ?`).get(choreId) as Chore | undefined;
-  if (!c) throw new AuthzError("chore not found");
-  assertHomeMember(c.home_id, userId);
-  return c;
-}
-
-export function addChore(homeId: number, userId: number, input: ChoreInput): number {
-  assertHomeMember(homeId, userId);
-  return Number(
-    getDb()
-      .prepare(
-        `INSERT INTO chores (home_id, title, area, cadence, points, assignee_user_id, rotating, conditional_note, standard)
-         VALUES (@home_id, @title, @area, @cadence, @points, @assignee_user_id, @rotating, @conditional_note, @standard)`,
-      )
-      .run({
-        home_id: homeId,
-        title: input.title,
-        area: input.area,
-        cadence: input.cadence,
-        points: input.points,
-        assignee_user_id: input.assignee_user_id,
-        rotating: input.rotating ? 1 : 0,
-        conditional_note: input.conditional_note,
-        standard: input.standard,
-      }).lastInsertRowid,
+export async function listChores(homeId: number): Promise<Chore[]> {
+  return dbAll<Chore>(
+    `SELECT * FROM chores WHERE home_id = ? AND active = 1 ORDER BY id`,
+    [homeId],
   );
 }
 
-export function updateChore(choreId: number, userId: number, input: ChoreInput): void {
-  getChore(choreId, userId); // authz
-  getDb()
-    .prepare(
-      `UPDATE chores SET title=@title, area=@area, cadence=@cadence, points=@points,
+export async function getChore(choreId: number, userId: number): Promise<Chore> {
+  const c = await dbGet<Chore>(`SELECT * FROM chores WHERE id = ?`, [choreId]);
+  if (!c) throw new AuthzError("chore not found");
+  await assertHomeMember(c.home_id, userId);
+  return c;
+}
+
+export async function addChore(homeId: number, userId: number, input: ChoreInput): Promise<number> {
+  await assertHomeMember(homeId, userId);
+  const info = await dbRun(
+    `INSERT INTO chores (home_id, title, area, cadence, points, assignee_user_id, rotating, conditional_note, standard)
+         VALUES (@home_id, @title, @area, @cadence, @points, @assignee_user_id, @rotating, @conditional_note, @standard)`,
+    {
+      home_id: homeId,
+      title: input.title,
+      area: input.area,
+      cadence: input.cadence,
+      points: input.points,
+      assignee_user_id: input.assignee_user_id,
+      rotating: input.rotating ? 1 : 0,
+      conditional_note: input.conditional_note,
+      standard: input.standard,
+    },
+  );
+  return Number(info.lastInsertRowid);
+}
+
+export async function updateChore(choreId: number, userId: number, input: ChoreInput): Promise<void> {
+  await getChore(choreId, userId); // authz
+  await dbRun(
+    `UPDATE chores SET title=@title, area=@area, cadence=@cadence, points=@points,
        assignee_user_id=@assignee_user_id, rotating=@rotating, conditional_note=@conditional_note,
        standard=@standard WHERE id=@id`,
-    )
-    .run({
+    {
       id: choreId,
       title: input.title,
       area: input.area,
@@ -173,116 +168,114 @@ export function updateChore(choreId: number, userId: number, input: ChoreInput):
       rotating: input.rotating ? 1 : 0,
       conditional_note: input.conditional_note,
       standard: input.standard,
-    });
+    },
+  );
 }
 
-export function deleteChore(choreId: number, userId: number): void {
-  getChore(choreId, userId);
-  getDb().prepare(`UPDATE chores SET active = 0 WHERE id = ?`).run(choreId);
+export async function deleteChore(choreId: number, userId: number): Promise<void> {
+  await getChore(choreId, userId);
+  await dbRun(`UPDATE chores SET active = 0 WHERE id = ?`, [choreId]);
 }
 
 // Log a completion → snapshot the chore's current points to the doer.
-export function logChore(choreId: number, userId: number, date = todayStr()): void {
-  const c = getChore(choreId, userId);
-  getDb()
-    .prepare(`INSERT INTO chore_logs (chore_id, user_id, date, points) VALUES (?, ?, ?, ?)`)
-    .run(choreId, userId, date, c.points);
+export async function logChore(choreId: number, userId: number, date = todayStr()): Promise<void> {
+  const c = await getChore(choreId, userId);
+  await dbRun(`INSERT INTO chore_logs (chore_id, user_id, date, points) VALUES (?, ?, ?, ?)`, [
+    choreId,
+    userId,
+    date,
+    c.points,
+  ]);
 }
 
 // Last completion date per chore in a home → { choreId: 'YYYY-MM-DD' }.
-export function lastDoneByChore(homeId: number): Record<number, string> {
-  const rows = getDb()
-    .prepare(
-      `SELECT l.chore_id AS id, MAX(l.date) AS last FROM chore_logs l
+export async function lastDoneByChore(homeId: number): Promise<Record<number, string>> {
+  const rows = await dbAll<{ id: number; last: string }>(
+    `SELECT l.chore_id AS id, MAX(l.date) AS last FROM chore_logs l
        JOIN chores c ON c.id = l.chore_id WHERE c.home_id = ? GROUP BY l.chore_id`,
-    )
-    .all(homeId) as { id: number; last: string }[];
+    [homeId],
+  );
   const out: Record<number, string> = {};
-  for (const r of rows) out[r.id] = r.last;
+  for (const r of rows) out[Number(r.id)] = r.last;
   return out;
 }
 
 // Who last did each chore (for "done by X" labels).
-export function lastDoerByChore(homeId: number): Record<number, number> {
-  const rows = getDb()
-    .prepare(
-      `SELECT l.chore_id AS id, l.user_id AS uid FROM chore_logs l
+export async function lastDoerByChore(homeId: number): Promise<Record<number, number>> {
+  const rows = await dbAll<{ id: number; uid: number }>(
+    `SELECT l.chore_id AS id, l.user_id AS uid FROM chore_logs l
        JOIN chores c ON c.id = l.chore_id
        WHERE c.home_id = ? AND l.id IN (
          SELECT MAX(id) FROM chore_logs GROUP BY chore_id
        )`,
-    )
-    .all(homeId) as { id: number; uid: number }[];
+    [homeId],
+  );
   const out: Record<number, number> = {};
-  for (const r of rows) out[r.id] = r.uid;
+  for (const r of rows) out[Number(r.id)] = Number(r.uid);
   return out;
 }
 
 // ===== points / fairness =====
 // Points per member from chore logs + completed ad-hoc tasks, optionally since a date.
-export function pointsByMember(homeId: number, since?: string): Record<number, number> {
-  const db = getDb();
+export async function pointsByMember(homeId: number, since?: string): Promise<Record<number, number>> {
   const out: Record<number, number> = {};
-  for (const id of memberIds(homeId)) out[id] = 0;
+  for (const id of await memberIds(homeId)) out[id] = 0;
 
-  const choreRows = db
-    .prepare(
-      `SELECT l.user_id AS uid, SUM(l.points) AS pts FROM chore_logs l
+  const choreRows = await dbAll<{ uid: number; pts: number }>(
+    `SELECT l.user_id AS uid, SUM(l.points) AS pts FROM chore_logs l
        JOIN chores c ON c.id = l.chore_id
        WHERE c.home_id = ?${since ? " AND l.date >= ?" : ""} GROUP BY l.user_id`,
-    )
-    .all(...(since ? [homeId, since] : [homeId])) as { uid: number; pts: number }[];
-  for (const r of choreRows) out[r.uid] = (out[r.uid] ?? 0) + (r.pts ?? 0);
+    since ? [homeId, since] : [homeId],
+  );
+  for (const r of choreRows) out[Number(r.uid)] = (out[Number(r.uid)] ?? 0) + Number(r.pts ?? 0);
 
-  const taskRows = db
-    .prepare(
-      `SELECT done_by AS uid, SUM(points) AS pts FROM home_tasks
+  const taskRows = await dbAll<{ uid: number; pts: number }>(
+    `SELECT done_by AS uid, SUM(points) AS pts FROM home_tasks
        WHERE home_id = ? AND done_by IS NOT NULL${since ? " AND done_at >= ?" : ""} GROUP BY done_by`,
-    )
-    .all(...(since ? [homeId, since] : [homeId])) as { uid: number; pts: number }[];
-  for (const r of taskRows) out[r.uid] = (out[r.uid] ?? 0) + (r.pts ?? 0);
+    since ? [homeId, since] : [homeId],
+  );
+  for (const r of taskRows) out[Number(r.uid)] = (out[Number(r.uid)] ?? 0) + Number(r.pts ?? 0);
 
   return out;
 }
 
 // ===== ad-hoc backlog =====
-export function listTasks(homeId: number): HomeTask[] {
-  return getDb()
-    .prepare(
-      `SELECT * FROM home_tasks WHERE home_id = ? ORDER BY (done_at IS NULL) DESC, created_at`,
-    )
-    .all(homeId) as HomeTask[];
+export async function listTasks(homeId: number): Promise<HomeTask[]> {
+  return dbAll<HomeTask>(
+    `SELECT * FROM home_tasks WHERE home_id = ? ORDER BY (done_at IS NULL) DESC, created_at`,
+    [homeId],
+  );
 }
 
-export function addTask(homeId: number, userId: number, title: string, points: number): void {
-  assertHomeMember(homeId, userId);
-  getDb()
-    .prepare(`INSERT INTO home_tasks (home_id, title, points, created_by) VALUES (?, ?, ?, ?)`)
-    .run(homeId, title, points, userId);
+export async function addTask(homeId: number, userId: number, title: string, points: number): Promise<void> {
+  await assertHomeMember(homeId, userId);
+  await dbRun(`INSERT INTO home_tasks (home_id, title, points, created_by) VALUES (?, ?, ?, ?)`, [
+    homeId,
+    title,
+    points,
+    userId,
+  ]);
 }
 
-export function completeTask(taskId: number, userId: number): void {
-  const t = getDb().prepare(`SELECT * FROM home_tasks WHERE id = ?`).get(taskId) as
-    | HomeTask
-    | undefined;
+export async function completeTask(taskId: number, userId: number): Promise<void> {
+  const t = await dbGet<HomeTask>(`SELECT * FROM home_tasks WHERE id = ?`, [taskId]);
   if (!t) throw new AuthzError("task not found");
-  assertHomeMember(t.home_id, userId);
+  await assertHomeMember(t.home_id, userId);
   if (t.done_at) {
-    getDb().prepare(`UPDATE home_tasks SET done_at = NULL, done_by = NULL WHERE id = ?`).run(taskId);
+    await dbRun(`UPDATE home_tasks SET done_at = NULL, done_by = NULL WHERE id = ?`, [taskId]);
   } else {
-    getDb()
-      .prepare(`UPDATE home_tasks SET done_at = datetime('now'), done_by = ? WHERE id = ?`)
-      .run(userId, taskId);
+    await dbRun(`UPDATE home_tasks SET done_at = datetime('now'), done_by = ? WHERE id = ?`, [
+      userId,
+      taskId,
+    ]);
   }
 }
 
-export function deleteTask(taskId: number, userId: number): void {
-  const t = getDb().prepare(`SELECT home_id FROM home_tasks WHERE id = ?`).get(taskId) as
-    | { home_id: number }
-    | undefined;
+export async function deleteTask(taskId: number, userId: number): Promise<void> {
+  const t = await dbGet<{ home_id: number }>(`SELECT home_id FROM home_tasks WHERE id = ?`, [taskId]);
   if (!t) return;
-  assertHomeMember(t.home_id, userId);
-  getDb().prepare(`DELETE FROM home_tasks WHERE id = ?`).run(taskId);
+  await assertHomeMember(t.home_id, userId);
+  await dbRun(`DELETE FROM home_tasks WHERE id = ?`, [taskId]);
 }
 
 // Re-export so pages can default new chore points by cadence.

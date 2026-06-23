@@ -1,5 +1,5 @@
 import "server-only";
-import { getDb } from "./db";
+import { libsql } from "./db";
 import { assertHomeMember, listChores } from "./home";
 import { cadencePoints, type Cadence } from "./home-cadence";
 
@@ -55,18 +55,16 @@ const STARTER: Seed[] = [
 ];
 
 // Insert the starter set, but only if the home has no chores yet (idempotent).
-export function seedStarter(homeId: number, userId: number): number {
-  assertHomeMember(homeId, userId);
-  if (listChores(homeId).length > 0) return 0;
-  const insert = getDb().prepare(
-    `INSERT INTO chores (home_id, title, area, cadence, points, rotating, conditional_note)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+export async function seedStarter(homeId: number, userId: number): Promise<number> {
+  await assertHomeMember(homeId, userId);
+  if ((await listChores(homeId)).length > 0) return 0;
+  const sql = `INSERT INTO chores (home_id, title, area, cadence, points, rotating, conditional_note)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`;
+  await libsql().batch(
+    STARTER.map((r) => ({
+      sql,
+      args: [homeId, r.title, r.area, r.cadence, cadencePoints(r.cadence), r.rotating ? 1 : 0, r.note ?? null],
+    })),
   );
-  const tx = getDb().transaction((rows: Seed[]) => {
-    for (const r of rows) {
-      insert.run(homeId, r.title, r.area, r.cadence, cadencePoints(r.cadence), r.rotating ? 1 : 0, r.note ?? null);
-    }
-  });
-  tx(STARTER);
   return STARTER.length;
 }

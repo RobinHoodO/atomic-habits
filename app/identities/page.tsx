@@ -7,13 +7,18 @@ export const dynamic = "force-dynamic";
 
 export default async function IdentitiesPage() {
   const user = await requireUser();
-  const identities = listIdentities(user.id);
-  const habits = listHabits(user.id, true);
+  const identities = await listIdentities(user.id);
+  const habits = await listHabits(user.id, true);
   const habitCount = new Map<number, number>();
   for (const h of habits) {
     if (h.identity_id)
       habitCount.set(h.identity_id, (habitCount.get(h.identity_id) ?? 0) + 1);
   }
+  const votes = new Map<number, number>(
+    await Promise.all(
+      identities.map(async (i) => [i.id, await identityVotes(i.id, user.id)] as const),
+    ),
+  );
 
   return (
     <div className="flex flex-col gap-5">
@@ -38,7 +43,7 @@ export default async function IdentitiesPage() {
                 </div>
               </div>
               <div className="rounded-lg border border-border bg-surface-2 px-4 py-2 text-center">
-                <div className="text-2xl font-bold text-good">{identityVotes(i.id, user.id)}</div>
+                <div className="text-2xl font-bold text-good">{votes.get(i.id) ?? 0}</div>
                 <div className="text-[0.7rem] uppercase tracking-wide text-muted">votes</div>
               </div>
             </div>

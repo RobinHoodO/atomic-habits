@@ -10,12 +10,12 @@ export const dynamic = "force-dynamic";
 
 export default async function TasksPage() {
   const user = await requireUser();
-  const home = homeForUser(user.id);
+  const home = await homeForUser(user.id);
   if (!home) redirect("/home");
 
   const today = todayStr();
-  const nameOf = new Map(homeMembers(home.id).map((m) => [m.user_id, m.name]));
-  const tasks = listTasks(home.id);
+  const nameOf = new Map((await homeMembers(home.id)).map((m) => [m.user_id, m.name]));
+  const tasks = await listTasks(home.id);
   const open = tasks.filter((t) => !t.done_at);
   const done = tasks.filter((t) => t.done_at);
   const staleCount = open.filter((t) => taskIsStale(t.created_at, today)).length;

@@ -1,6 +1,6 @@
 import "server-only";
 import bcrypt from "bcryptjs";
-import { getDb } from "./db";
+import { dbGet, dbRun } from "./db";
 
 export interface User {
   id: number;
@@ -15,16 +15,14 @@ export interface PublicUser {
   name: string;
 }
 
-export function getUserByEmail(email: string): User | undefined {
-  return getDb()
-    .prepare("SELECT * FROM users WHERE email = ?")
-    .get(email.trim().toLowerCase()) as User | undefined;
+export async function getUserByEmail(email: string): Promise<User | undefined> {
+  return dbGet<User>("SELECT * FROM users WHERE email = ?", [
+    email.trim().toLowerCase(),
+  ]);
 }
 
-export function getUserById(id: number): PublicUser | undefined {
-  return getDb()
-    .prepare("SELECT id, email, name FROM users WHERE id = ?")
-    .get(id) as PublicUser | undefined;
+export async function getUserById(id: number): Promise<PublicUser | undefined> {
+  return dbGet<PublicUser>("SELECT id, email, name FROM users WHERE id = ?", [id]);
 }
 
 // Create a user; throws if the email already exists (UNIQUE constraint).
@@ -34,8 +32,9 @@ export async function createUser(
   password: string,
 ): Promise<number> {
   const hash = await bcrypt.hash(password, 10);
-  const info = getDb()
-    .prepare("INSERT INTO users (email, name, password_hash) VALUES (?, ?, ?)")
-    .run(email.trim().toLowerCase(), name.trim(), hash);
+  const info = await dbRun(
+    "INSERT INTO users (email, name, password_hash) VALUES (?, ?, ?)",
+    [email.trim().toLowerCase(), name.trim(), hash],
+  );
   return Number(info.lastInsertRowid);
 }

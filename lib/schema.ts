@@ -188,14 +188,14 @@ CREATE TABLE IF NOT EXISTS home_tasks (
 // (CREATE IF NOT EXISTS above covers new TABLES). Each step is idempotent —
 // a duplicate-column error just means it's already applied. ponytail: a guarded
 // ALTER list beats a version-number ledger for a handful of additive changes.
-export function runMigrations(db: import("better-sqlite3").Database): void {
+export async function runMigrations(db: import("@libsql/client").Client): Promise<void> {
   const steps = [
     "ALTER TABLE contracts ADD COLUMN partner_user_id INTEGER REFERENCES users(id)",
     "ALTER TABLE chores ADD COLUMN standard TEXT",
   ];
   for (const sql of steps) {
     try {
-      db.exec(sql);
+      await db.execute(sql);
     } catch (e) {
       if (!String(e).includes("duplicate column")) throw e;
     }

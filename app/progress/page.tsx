@@ -6,10 +6,10 @@ export const dynamic = "force-dynamic";
 
 export default async function ProgressPage() {
   const user = await requireUser();
-  const xp = userXp(user.id);
+  const xp = await userXp(user.id);
   const lvl = levelForXp(xp);
-  const earned = new Map(listAchievements(user.id).map((a) => [a.key, a.earned_at]));
-  const freezes = availableFreezes(user.id);
+  const earned = new Map((await listAchievements(user.id)).map((a) => [a.key, a.earned_at]));
+  const freezes = await availableFreezes(user.id);
 
   return (
     <div className="flex flex-col gap-6">

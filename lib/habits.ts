@@ -1,5 +1,5 @@
 import "server-only";
-import { getDb } from "./db";
+import { dbGet, dbAll, dbRun } from "./db";
 import {
   parseSchedule,
   currentStreak,
@@ -78,50 +78,48 @@ export class AuthzError extends Error {
   }
 }
 
-export function isMember(habitId: number, userId: number): boolean {
-  return !!getDb()
-    .prepare("SELECT 1 FROM habit_members WHERE habit_id = ? AND user_id = ?")
-    .get(habitId, userId);
+export async function isMember(habitId: number, userId: number): Promise<boolean> {
+  return !!(await dbGet(
+    "SELECT 1 FROM habit_members WHERE habit_id = ? AND user_id = ?",
+    [habitId, userId],
+  ));
 }
 
-export function areConnected(a: number, b: number): boolean {
+export async function areConnected(a: number, b: number): Promise<boolean> {
   if (a === b) return true;
-  return !!getDb()
-    .prepare(
-      `SELECT 1 FROM connections
+  return !!(await dbGet(
+    `SELECT 1 FROM connections
        WHERE status = 'accepted'
          AND ((requester_id = ? AND addressee_id = ?)
            OR (requester_id = ? AND addressee_id = ?))`,
-    )
-    .get(a, b, b, a);
+    [a, b, b, a],
+  ));
 }
 
 // View: member, or a connection when the habit is shared to connections.
-export function canView(habit: Habit, userId: number): boolean {
-  if (isMember(habit.id, userId)) return true;
-  return habit.visibility === "connections" && areConnected(habit.owner_id, userId);
+export async function canView(habit: Habit, userId: number): Promise<boolean> {
+  if (await isMember(habit.id, userId)) return true;
+  return habit.visibility === "connections" && (await areConnected(habit.owner_id, userId));
 }
 
 // Edit/complete: members only (owner + invited partners).
-export function canEdit(habit: Habit, userId: number): boolean {
+export async function canEdit(habit: Habit, userId: number): Promise<boolean> {
   return isMember(habit.id, userId);
 }
 
-function rawHabit(id: number): Habit | undefined {
-  return getDb().prepare("SELECT * FROM habits WHERE id = ?").get(id) as
-    | Habit
-    | undefined;
+async function rawHabit(id: number): Promise<Habit | undefined> {
+  return dbGet<Habit>("SELECT * FROM habits WHERE id = ?", [id]);
 }
 
-export function assertCanView(habitId: number, userId: number): Habit {
-  const h = rawHabit(habitId);
-  if (!h || !canView(h, userId)) throw new AuthzError();
+export async function assertCanView(habitId: number, userId: number): Promise<Habit> {
+  const h = await rawHabit(habitId);
+  if (!h || !(await canView(h, userId))) throw new AuthzError();
   return h;
 }
 
-export function assertCanEdit(habitId: number, userId: number): Habit {
-  const h = rawHabit(habitId);
-  if (!h || !canEdit(h, userId)) throw new AuthzError();
+export async function assertCanEdit(habitId: number, userId: number): Promise<Habit> {
+  const h = await rawHabit(habitId);
+  if (!h || !(await canEdit(h, userId))) throw new AuthzError();
   return h;
 }
 
@@ -129,39 +127,41 @@ export function assertCanEdit(habitId: number, userId: number): Habit {
 // Identities  (scoped to owner)
 // ======================================================================
 
-export function listIdentities(userId: number): Identity[] {
-  return getDb()
-    .prepare("SELECT * FROM identities WHERE owner_id = ? ORDER BY name")
-    .all(userId) as Identity[];
+export async function listIdentities(userId: number): Promise<Identity[]> {
+  return dbAll<Identity>(
+    "SELECT * FROM identities WHERE owner_id = ? ORDER BY name",
+    [userId],
+  );
 }
 
-export function getIdentity(id: number, userId: number): Identity | undefined {
-  return getDb()
-    .prepare("SELECT * FROM identities WHERE id = ? AND owner_id = ?")
-    .get(id, userId) as Identity | undefined;
+export async function getIdentity(id: number, userId: number): Promise<Identity | undefined> {
+  return dbGet<Identity>(
+    "SELECT * FROM identities WHERE id = ? AND owner_id = ?",
+    [id, userId],
+  );
 }
 
-export function createIdentity(
+export async function createIdentity(
   userId: number,
   name: string,
   statement: string,
-): number {
-  const info = getDb()
-    .prepare("INSERT INTO identities (owner_id, name, statement) VALUES (?, ?, ?)")
-    .run(userId, name, statement);
+): Promise<number> {
+  const info = await dbRun(
+    "INSERT INTO identities (owner_id, name, statement) VALUES (?, ?, ?)",
+    [userId, name, statement],
+  );
   return Number(info.lastInsertRowid);
 }
 
 // Votes = the owner's completions on habits tied to this identity.
-export function identityVotes(identityId: number, ownerId: number): number {
-  const row = getDb()
-    .prepare(
-      `SELECT COUNT(*) AS n FROM completions c
+export async function identityVotes(identityId: number, ownerId: number): Promise<number> {
+  const row = await dbGet<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM completions c
        JOIN habits h ON h.id = c.habit_id
        WHERE h.identity_id = ? AND c.user_id = ?`,
-    )
-    .get(identityId, ownerId) as { n: number };
-  return row.n;
+    [identityId, ownerId],
+  );
+  return Number(row?.n ?? 0);
 }
 
 // ======================================================================
@@ -169,106 +169,98 @@ export function identityVotes(identityId: number, ownerId: number): number {
 // ======================================================================
 
 // Habits the user participates in (owner or invited partner).
-export function listHabits(userId: number, includeArchived = false): Habit[] {
+export async function listHabits(userId: number, includeArchived = false): Promise<Habit[]> {
   const sql = `SELECT h.* FROM habits h
      JOIN habit_members m ON m.habit_id = h.id AND m.user_id = ?
      ${includeArchived ? "" : "WHERE h.archived = 0"}
      ORDER BY h.archived, h.name`;
-  return getDb().prepare(sql).all(userId) as Habit[];
+  return dbAll<Habit>(sql, [userId]);
 }
 
 // A habit the user is allowed to VIEW (throws otherwise).
-export function getHabit(id: number, userId: number): Habit {
+export async function getHabit(id: number, userId: number): Promise<Habit> {
   return assertCanView(id, userId);
 }
 
-export function createHabit(userId: number, input: HabitInput): number {
-  const db = getDb();
-  const tx = db.transaction(() => {
-    const info = db
-      .prepare(
-        `INSERT INTO habits
-         (owner_id, name, type, identity_id, cue, craving, response, reward,
-          intention_time, intention_location, gateway_text, schedule, visibility)
-         VALUES (@owner_id, @name, @type, @identity_id, @cue, @craving, @response,
-          @reward, @intention_time, @intention_location, @gateway_text, @schedule,
-          @visibility)`,
-      )
-      .run({ ...input, owner_id: userId });
-    const habitId = Number(info.lastInsertRowid);
-    db.prepare(
-      "INSERT INTO habit_members (habit_id, user_id, role) VALUES (?, ?, 'owner')",
-    ).run(habitId, userId);
-    return habitId;
-  });
-  return tx();
+export async function createHabit(userId: number, input: HabitInput): Promise<number> {
+  const info = await dbRun(
+    `INSERT INTO habits
+       (owner_id, name, type, identity_id, cue, craving, response, reward,
+        intention_time, intention_location, gateway_text, schedule, visibility)
+       VALUES (@owner_id, @name, @type, @identity_id, @cue, @craving, @response,
+        @reward, @intention_time, @intention_location, @gateway_text, @schedule,
+        @visibility)`,
+    { ...input, owner_id: userId },
+  );
+  const habitId = Number(info.lastInsertRowid);
+  await dbRun(
+    "INSERT INTO habit_members (habit_id, user_id, role) VALUES (?, ?, 'owner')",
+    [habitId, userId],
+  );
+  return habitId;
 }
 
-export function updateHabit(id: number, userId: number, input: HabitInput): void {
-  assertCanEdit(id, userId);
-  getDb()
-    .prepare(
-      `UPDATE habits SET
+export async function updateHabit(id: number, userId: number, input: HabitInput): Promise<void> {
+  await assertCanEdit(id, userId);
+  await dbRun(
+    `UPDATE habits SET
         name=@name, type=@type, identity_id=@identity_id, cue=@cue,
         craving=@craving, response=@response, reward=@reward,
         intention_time=@intention_time, intention_location=@intention_location,
         gateway_text=@gateway_text, schedule=@schedule, visibility=@visibility
        WHERE id=@id`,
-    )
-    .run({ ...input, id });
+    { ...input, id },
+  );
 }
 
-export function setArchived(id: number, userId: number, archived: boolean): void {
-  const h = assertCanEdit(id, userId);
+export async function setArchived(id: number, userId: number, archived: boolean): Promise<void> {
+  const h = await assertCanEdit(id, userId);
   if (h.owner_id !== userId) throw new AuthzError("Only the owner can archive");
-  getDb()
-    .prepare("UPDATE habits SET archived = ? WHERE id = ?")
-    .run(archived ? 1 : 0, id);
+  await dbRun("UPDATE habits SET archived = ? WHERE id = ?", [archived ? 1 : 0, id]);
 }
 
 // ======================================================================
 // Completions  (per user, per habit, per day)
 // ======================================================================
 
-export function completionDates(habitId: number, userId: number): string[] {
-  const rows = getDb()
-    .prepare(
-      "SELECT date FROM completions WHERE habit_id = ? AND user_id = ? ORDER BY date",
-    )
-    .all(habitId, userId) as { date: string }[];
+export async function completionDates(habitId: number, userId: number): Promise<string[]> {
+  const rows = await dbAll<{ date: string }>(
+    "SELECT date FROM completions WHERE habit_id = ? AND user_id = ? ORDER BY date",
+    [habitId, userId],
+  );
   return rows.map((r) => r.date);
 }
 
-export function completionSet(habitId: number, userId: number): Set<string> {
-  return new Set(completionDates(habitId, userId));
+export async function completionSet(habitId: number, userId: number): Promise<Set<string>> {
+  return new Set(await completionDates(habitId, userId));
 }
 
-export function isDone(habitId: number, userId: number, date: string): boolean {
-  return !!getDb()
-    .prepare(
-      "SELECT 1 FROM completions WHERE habit_id = ? AND user_id = ? AND date = ?",
-    )
-    .get(habitId, userId, date);
+export async function isDone(habitId: number, userId: number, date: string): Promise<boolean> {
+  return !!(await dbGet(
+    "SELECT 1 FROM completions WHERE habit_id = ? AND user_id = ? AND date = ?",
+    [habitId, userId, date],
+  ));
 }
 
 // Toggle the acting user's completion. Requires membership.
-export function toggleCompletion(
+export async function toggleCompletion(
   habitId: number,
   userId: number,
   date: string,
   isGateway = false,
-): boolean {
-  assertCanEdit(habitId, userId);
-  const db = getDb();
-  if (isDone(habitId, userId, date)) {
-    db.prepare(
+): Promise<boolean> {
+  await assertCanEdit(habitId, userId);
+  if (await isDone(habitId, userId, date)) {
+    await dbRun(
       "DELETE FROM completions WHERE habit_id = ? AND user_id = ? AND date = ?",
-    ).run(habitId, userId, date);
+      [habitId, userId, date],
+    );
     return false;
   }
-  db.prepare(
+  await dbRun(
     "INSERT INTO completions (habit_id, user_id, date, is_gateway) VALUES (?, ?, ?, ?)",
-  ).run(habitId, userId, date, isGateway ? 1 : 0);
+    [habitId, userId, date, isGateway ? 1 : 0],
+  );
   return true;
 }
 
@@ -276,15 +268,15 @@ export function toggleCompletion(
 // Stats
 // ======================================================================
 
-export function statsFor(
+export async function statsFor(
   habit: Habit,
   userId: number,
   today = todayStr(),
-): HabitStats {
+): Promise<HabitStats> {
   const schedule: Schedule = parseSchedule(habit.schedule);
-  const done = completionSet(habit.id, userId);
-  const frozen = freezesFor(habit.id, userId);
-  const since = habitStartDate(habit.id);
+  const done = await completionSet(habit.id, userId);
+  const frozen = await freezesFor(habit.id, userId);
+  const since = await habitStartDate(habit.id);
   return {
     streak: currentStreak(schedule, done, today, frozen),
     consistency: consistencyScore(schedule, done, today, 30, frozen, since),
@@ -297,10 +289,11 @@ export function statsFor(
 
 // The date this habit was created. Scoring never looks before it, so days
 // before the habit existed don't count as misses.
-export function habitStartDate(habitId: number): string {
-  const row = getDb()
-    .prepare(`SELECT created_at FROM habits WHERE id = ?`)
-    .get(habitId) as { created_at?: string } | undefined;
+export async function habitStartDate(habitId: number): Promise<string> {
+  const row = await dbGet<{ created_at?: string }>(
+    `SELECT created_at FROM habits WHERE id = ?`,
+    [habitId],
+  );
   const start = (row?.created_at ?? todayStr()).slice(0, 10);
   const t = todayStr();
   return start > t ? t : start; // never floor scoring in the future
@@ -316,38 +309,37 @@ export interface Member {
   role: string;
 }
 
-export function membersOf(habitId: number): Member[] {
-  return getDb()
-    .prepare(
-      `SELECT m.user_id, u.name, m.role FROM habit_members m
+export async function membersOf(habitId: number): Promise<Member[]> {
+  return dbAll<Member>(
+    `SELECT m.user_id, u.name, m.role FROM habit_members m
        JOIN users u ON u.id = m.user_id
        WHERE m.habit_id = ? ORDER BY m.role DESC, u.name`,
-    )
-    .all(habitId) as Member[];
+    [habitId],
+  );
 }
 
-export function isPaired(habitId: number): boolean {
-  const row = getDb()
-    .prepare("SELECT COUNT(*) AS n FROM habit_members WHERE habit_id = ?")
-    .get(habitId) as { n: number };
-  return row.n > 1;
+export async function isPaired(habitId: number): Promise<boolean> {
+  const row = await dbGet<{ n: number }>(
+    "SELECT COUNT(*) AS n FROM habit_members WHERE habit_id = ?",
+    [habitId],
+  );
+  return Number(row?.n ?? 0) > 1;
 }
 
 // Owner invites a partner who must be an accepted connection.
-export function addPartner(
+export async function addPartner(
   habitId: number,
   ownerId: number,
   partnerId: number,
-): void {
-  const h = assertCanEdit(habitId, ownerId);
+): Promise<void> {
+  const h = await assertCanEdit(habitId, ownerId);
   if (h.owner_id !== ownerId) throw new AuthzError("Only the owner can invite");
-  if (!areConnected(ownerId, partnerId))
+  if (!(await areConnected(ownerId, partnerId)))
     throw new AuthzError("You can only pair with a connection");
-  getDb()
-    .prepare(
-      "INSERT OR IGNORE INTO habit_members (habit_id, user_id, role) VALUES (?, ?, 'partner')",
-    )
-    .run(habitId, partnerId);
+  await dbRun(
+    "INSERT OR IGNORE INTO habit_members (habit_id, user_id, role) VALUES (?, ?, 'partner')",
+    [habitId, partnerId],
+  );
 }
 
 // ======================================================================
@@ -362,72 +354,68 @@ export interface ConnectionRow {
   status: string;
 }
 
-export function requestConnection(fromId: number, toEmail: string): string {
-  const db = getDb();
-  const target = db
-    .prepare("SELECT id FROM users WHERE email = ?")
-    .get(toEmail.trim().toLowerCase()) as { id: number } | undefined;
+export async function requestConnection(fromId: number, toEmail: string): Promise<string> {
+  const target = await dbGet<{ id: number }>(
+    "SELECT id FROM users WHERE email = ?",
+    [toEmail.trim().toLowerCase()],
+  );
   if (!target) return "No user with that email.";
-  if (target.id === fromId) return "That's you.";
-  if (areConnected(fromId, target.id)) return "Already connected.";
+  if (Number(target.id) === fromId) return "That's you.";
+  if (await areConnected(fromId, Number(target.id))) return "Already connected.";
   // accept silently if they already requested you
-  const reverse = db
-    .prepare(
-      "SELECT id FROM connections WHERE requester_id = ? AND addressee_id = ? AND status = 'pending'",
-    )
-    .get(target.id, fromId) as { id: number } | undefined;
+  const reverse = await dbGet<{ id: number }>(
+    "SELECT id FROM connections WHERE requester_id = ? AND addressee_id = ? AND status = 'pending'",
+    [Number(target.id), fromId],
+  );
   if (reverse) {
-    db.prepare("UPDATE connections SET status = 'accepted' WHERE id = ?").run(reverse.id);
+    await dbRun("UPDATE connections SET status = 'accepted' WHERE id = ?", [Number(reverse.id)]);
     return "Connected!";
   }
-  db.prepare(
+  await dbRun(
     "INSERT OR IGNORE INTO connections (requester_id, addressee_id) VALUES (?, ?)",
-  ).run(fromId, target.id);
+    [fromId, Number(target.id)],
+  );
   return "Request sent.";
 }
 
-export function acceptConnection(connId: number, userId: number): void {
-  getDb()
-    .prepare(
-      "UPDATE connections SET status = 'accepted' WHERE id = ? AND addressee_id = ?",
-    )
-    .run(connId, userId);
+export async function acceptConnection(connId: number, userId: number): Promise<void> {
+  await dbRun(
+    "UPDATE connections SET status = 'accepted' WHERE id = ? AND addressee_id = ?",
+    [connId, userId],
+  );
 }
 
-export function listConnections(userId: number): ConnectionRow[] {
-  return getDb()
-    .prepare(
-      `SELECT c.id,
+export async function listConnections(userId: number): Promise<ConnectionRow[]> {
+  return dbAll<ConnectionRow>(
+    `SELECT c.id,
               u.id AS user_id, u.name, u.email, c.status
        FROM connections c
        JOIN users u ON u.id = CASE WHEN c.requester_id = ? THEN c.addressee_id ELSE c.requester_id END
        WHERE (c.requester_id = ? OR c.addressee_id = ?) AND c.status = 'accepted'
        ORDER BY u.name`,
-    )
-    .all(userId, userId, userId) as ConnectionRow[];
+    [userId, userId, userId],
+  );
 }
 
-export function pendingIncoming(userId: number): ConnectionRow[] {
-  return getDb()
-    .prepare(
-      `SELECT c.id, u.id AS user_id, u.name, u.email, c.status
+export async function pendingIncoming(userId: number): Promise<ConnectionRow[]> {
+  return dbAll<ConnectionRow>(
+    `SELECT c.id, u.id AS user_id, u.name, u.email, c.status
        FROM connections c JOIN users u ON u.id = c.requester_id
        WHERE c.addressee_id = ? AND c.status = 'pending' ORDER BY u.name`,
-    )
-    .all(userId) as ConnectionRow[];
+    [userId],
+  );
 }
 
 // Habits of a connection that the viewer is allowed to see (visibility=connections).
-export function visibleHabitsOf(ownerId: number, viewerId: number): Habit[] {
-  if (!areConnected(ownerId, viewerId)) return [];
-  return getDb()
-    .prepare(
-      `SELECT h.* FROM habits h
+export async function visibleHabitsOf(ownerId: number, viewerId: number): Promise<Habit[]> {
+  if (!(await areConnected(ownerId, viewerId))) return [];
+  return dbAll<Habit>(
+    `SELECT h.* FROM habits h
        JOIN habit_members m ON m.habit_id = h.id AND m.user_id = ? AND m.role = 'owner'
        WHERE h.archived = 0 AND h.visibility = 'connections'
        ORDER BY h.name`,
-    )
-    .all(ownerId) as Habit[];
+    [ownerId],
+  );
 }
 
 // ======================================================================
@@ -442,30 +430,28 @@ export interface StackRow {
   stacked_name: string;
 }
 
-export function stacksInvolving(habitId: number): StackRow[] {
-  return getDb()
-    .prepare(
-      `SELECT s.id, s.anchor_habit_id, s.stacked_habit_id,
+export async function stacksInvolving(habitId: number): Promise<StackRow[]> {
+  return dbAll<StackRow>(
+    `SELECT s.id, s.anchor_habit_id, s.stacked_habit_id,
               a.name AS anchor_name, b.name AS stacked_name
        FROM habit_stacks s
        JOIN habits a ON a.id = s.anchor_habit_id
        JOIN habits b ON b.id = s.stacked_habit_id
        WHERE s.anchor_habit_id = ? OR s.stacked_habit_id = ?`,
-    )
-    .all(habitId, habitId) as StackRow[];
+    [habitId, habitId],
+  );
 }
 
-export function addStack(anchorId: number, stackedId: number): void {
+export async function addStack(anchorId: number, stackedId: number): Promise<void> {
   if (anchorId === stackedId) return;
-  getDb()
-    .prepare(
-      "INSERT OR IGNORE INTO habit_stacks (anchor_habit_id, stacked_habit_id) VALUES (?, ?)",
-    )
-    .run(anchorId, stackedId);
+  await dbRun(
+    "INSERT OR IGNORE INTO habit_stacks (anchor_habit_id, stacked_habit_id) VALUES (?, ?)",
+    [anchorId, stackedId],
+  );
 }
 
-export function removeStack(id: number): void {
-  getDb().prepare("DELETE FROM habit_stacks WHERE id = ?").run(id);
+export async function removeStack(id: number): Promise<void> {
+  await dbRun("DELETE FROM habit_stacks WHERE id = ?", [id]);
 }
 
 export interface Bundle {
@@ -474,20 +460,19 @@ export interface Bundle {
   want_text: string;
 }
 
-export function bundlesFor(habitId: number): Bundle[] {
-  return getDb()
-    .prepare("SELECT * FROM temptation_bundles WHERE habit_id = ?")
-    .all(habitId) as Bundle[];
+export async function bundlesFor(habitId: number): Promise<Bundle[]> {
+  return dbAll<Bundle>("SELECT * FROM temptation_bundles WHERE habit_id = ?", [habitId]);
 }
 
-export function addBundle(habitId: number, wantText: string): void {
-  getDb()
-    .prepare("INSERT INTO temptation_bundles (habit_id, want_text) VALUES (?, ?)")
-    .run(habitId, wantText);
+export async function addBundle(habitId: number, wantText: string): Promise<void> {
+  await dbRun("INSERT INTO temptation_bundles (habit_id, want_text) VALUES (?, ?)", [
+    habitId,
+    wantText,
+  ]);
 }
 
-export function removeBundle(id: number): void {
-  getDb().prepare("DELETE FROM temptation_bundles WHERE id = ?").run(id);
+export async function removeBundle(id: number): Promise<void> {
+  await dbRun("DELETE FROM temptation_bundles WHERE id = ?", [id]);
 }
 
 export interface EnvItem {
@@ -497,24 +482,27 @@ export interface EnvItem {
   kind: "obvious" | "friction";
 }
 
-export function envFor(habitId: number): EnvItem[] {
-  return getDb()
-    .prepare("SELECT * FROM environment_items WHERE habit_id = ? ORDER BY id")
-    .all(habitId) as EnvItem[];
+export async function envFor(habitId: number): Promise<EnvItem[]> {
+  return dbAll<EnvItem>(
+    "SELECT * FROM environment_items WHERE habit_id = ? ORDER BY id",
+    [habitId],
+  );
 }
 
-export function addEnvItem(
+export async function addEnvItem(
   habitId: number,
   text: string,
   kind: "obvious" | "friction",
-): void {
-  getDb()
-    .prepare("INSERT INTO environment_items (habit_id, text, kind) VALUES (?, ?, ?)")
-    .run(habitId, text, kind);
+): Promise<void> {
+  await dbRun("INSERT INTO environment_items (habit_id, text, kind) VALUES (?, ?, ?)", [
+    habitId,
+    text,
+    kind,
+  ]);
 }
 
-export function removeEnvItem(id: number): void {
-  getDb().prepare("DELETE FROM environment_items WHERE id = ?").run(id);
+export async function removeEnvItem(id: number): Promise<void> {
+  await dbRun("DELETE FROM environment_items WHERE id = ?", [id]);
 }
 
 export interface Contract {
@@ -526,22 +514,19 @@ export interface Contract {
   partner_user_id: number | null;
 }
 
-export function contractFor(habitId: number): Contract | undefined {
-  return getDb()
-    .prepare("SELECT * FROM contracts WHERE habit_id = ?")
-    .get(habitId) as Contract | undefined;
+export async function contractFor(habitId: number): Promise<Contract | undefined> {
+  return dbGet<Contract>("SELECT * FROM contracts WHERE habit_id = ?", [habitId]);
 }
 
-export function upsertContract(c: Contract): void {
-  getDb()
-    .prepare(
-      `INSERT INTO contracts (habit_id, commitment, stake, consequence, partner_name, partner_user_id)
+export async function upsertContract(c: Contract): Promise<void> {
+  await dbRun(
+    `INSERT INTO contracts (habit_id, commitment, stake, consequence, partner_name, partner_user_id)
        VALUES (@habit_id, @commitment, @stake, @consequence, @partner_name, @partner_user_id)
        ON CONFLICT(habit_id) DO UPDATE SET
          commitment=@commitment, stake=@stake, consequence=@consequence,
          partner_name=@partner_name, partner_user_id=@partner_user_id`,
-    )
-    .run(c);
+    { ...c },
+  );
 }
 
 // Habits where the given user is the accountability partner (people counting on them).
@@ -550,17 +535,16 @@ export interface BackingRow {
   owner_name: string;
   commitment: string;
 }
-export function listBacking(userId: number): BackingRow[] {
-  const rows = getDb()
-    .prepare(
-      `SELECT h.*, u.name AS owner_name, c.commitment AS commitment
+export async function listBacking(userId: number): Promise<BackingRow[]> {
+  const rows = await dbAll<Habit & { owner_name: string; commitment: string }>(
+    `SELECT h.*, u.name AS owner_name, c.commitment AS commitment
        FROM contracts c
        JOIN habits h ON h.id = c.habit_id
        JOIN users u ON u.id = h.owner_id
        WHERE c.partner_user_id = ? AND h.archived = 0
        ORDER BY u.name`,
-    )
-    .all(userId) as (Habit & { owner_name: string; commitment: string })[];
+    [userId],
+  );
   return rows.map(({ owner_name, commitment, ...habit }) => ({
     habit: habit as Habit,
     owner_name,
@@ -572,34 +556,34 @@ export function listBacking(userId: number): BackingRow[] {
 // Gamification (XP derived from activity; badges persisted on unlock)
 // ======================================================================
 
-export function userTotalCheckins(userId: number): number {
-  return (
-    getDb()
-      .prepare("SELECT COUNT(*) AS n FROM completions WHERE user_id = ?")
-      .get(userId) as { n: number }
-  ).n;
+export async function userTotalCheckins(userId: number): Promise<number> {
+  const row = await dbGet<{ n: number }>(
+    "SELECT COUNT(*) AS n FROM completions WHERE user_id = ?",
+    [userId],
+  );
+  return Number(row?.n ?? 0);
 }
 
-export function userXp(userId: number): number {
+export async function userXp(userId: number): Promise<number> {
   let streakSum = 0;
-  for (const h of listHabits(userId, true)) streakSum += statsFor(h, userId).streak;
-  return computeXp(userTotalCheckins(userId), streakSum);
+  for (const h of await listHabits(userId, true)) streakSum += (await statsFor(h, userId)).streak;
+  return computeXp(await userTotalCheckins(userId), streakSum);
 }
 
-export function badgeContext(userId: number): BadgeCtx {
-  const habits = listHabits(userId, true);
+export async function badgeContext(userId: number): Promise<BadgeCtx> {
+  const habits = await listHabits(userId, true);
   let maxStreak = 0;
   let hasRecovery = false;
   let paired = false;
   for (const h of habits) {
-    const s = statsFor(h, userId);
+    const s = await statsFor(h, userId);
     if (s.streak > maxStreak) maxStreak = s.streak;
     if (s.recovery != null && s.recovery > 0) hasRecovery = true;
-    if (isPaired(h.id)) paired = true;
+    if (await isPaired(h.id)) paired = true;
   }
   return {
     habitCount: habits.length,
-    totalCheckins: userTotalCheckins(userId),
+    totalCheckins: await userTotalCheckins(userId),
     maxStreak,
     hasRecovery,
     paired,
@@ -610,74 +594,75 @@ export interface Achievement {
   key: string;
   earned_at: string;
 }
-export function listAchievements(userId: number): Achievement[] {
-  return getDb()
-    .prepare("SELECT key, earned_at FROM achievements WHERE user_id = ? ORDER BY earned_at DESC")
-    .all(userId) as Achievement[];
+export async function listAchievements(userId: number): Promise<Achievement[]> {
+  return dbAll<Achievement>(
+    "SELECT key, earned_at FROM achievements WHERE user_id = ? ORDER BY earned_at DESC",
+    [userId],
+  );
 }
 
 // Evaluate + persist any newly-earned badges; returns the newly unlocked keys.
-export function unlockBadges(userId: number): string[] {
-  const earned = earnedBadgeKeys(badgeContext(userId));
-  const have = new Set(listAchievements(userId).map((a) => a.key));
+export async function unlockBadges(userId: number): Promise<string[]> {
+  const earned = earnedBadgeKeys(await badgeContext(userId));
+  const have = new Set((await listAchievements(userId)).map((a) => a.key));
   const fresh = earned.filter((k) => !have.has(k));
-  const ins = getDb().prepare(
-    "INSERT OR IGNORE INTO achievements (user_id, key) VALUES (?, ?)",
-  );
-  for (const k of fresh) ins.run(userId, k);
+  for (const k of fresh) {
+    await dbRun("INSERT OR IGNORE INTO achievements (user_id, key) VALUES (?, ?)", [userId, k]);
+  }
   if (fresh.length) {
-    ensureFreezeRow(userId);
-    getDb()
-      .prepare("UPDATE freeze_credits SET earned = earned + ? WHERE user_id = ?")
-      .run(fresh.length, userId);
+    await ensureFreezeRow(userId);
+    await dbRun("UPDATE freeze_credits SET earned = earned + ? WHERE user_id = ?", [
+      fresh.length,
+      userId,
+    ]);
   }
   return fresh;
 }
 
 // ---- streak freezes (power-ups) ----
-export function freezesFor(habitId: number, userId: number): Set<string> {
-  const rows = getDb()
-    .prepare("SELECT date FROM streak_freezes WHERE habit_id = ? AND user_id = ?")
-    .all(habitId, userId) as { date: string }[];
+export async function freezesFor(habitId: number, userId: number): Promise<Set<string>> {
+  const rows = await dbAll<{ date: string }>(
+    "SELECT date FROM streak_freezes WHERE habit_id = ? AND user_id = ?",
+    [habitId, userId],
+  );
   return new Set(rows.map((r) => r.date));
 }
 
-function ensureFreezeRow(userId: number): void {
-  getDb()
-    .prepare("INSERT OR IGNORE INTO freeze_credits (user_id, earned) VALUES (?, 2)")
-    .run(userId);
+async function ensureFreezeRow(userId: number): Promise<void> {
+  await dbRun("INSERT OR IGNORE INTO freeze_credits (user_id, earned) VALUES (?, 2)", [userId]);
 }
 
-export function availableFreezes(userId: number): number {
-  ensureFreezeRow(userId);
-  const earned = (
-    getDb().prepare("SELECT earned FROM freeze_credits WHERE user_id = ?").get(userId) as {
-      earned: number;
-    }
-  ).earned;
-  const used = (
-    getDb()
-      .prepare("SELECT COUNT(*) AS n FROM streak_freezes WHERE user_id = ?")
-      .get(userId) as { n: number }
-  ).n;
+export async function availableFreezes(userId: number): Promise<number> {
+  await ensureFreezeRow(userId);
+  const earnedRow = await dbGet<{ earned: number }>(
+    "SELECT earned FROM freeze_credits WHERE user_id = ?",
+    [userId],
+  );
+  const earned = Number(earnedRow?.earned ?? 0);
+  const usedRow = await dbGet<{ n: number }>(
+    "SELECT COUNT(*) AS n FROM streak_freezes WHERE user_id = ?",
+    [userId],
+  );
+  const used = Number(usedRow?.n ?? 0);
   return Math.max(0, earned - used);
 }
 
 // Spend a freeze to protect one scheduled day from counting as a miss.
-export function spendFreeze(habitId: number, userId: number, date: string): boolean {
-  assertCanEdit(habitId, userId);
-  if (availableFreezes(userId) <= 0) return false;
-  getDb()
-    .prepare("INSERT OR IGNORE INTO streak_freezes (user_id, habit_id, date) VALUES (?, ?, ?)")
-    .run(userId, habitId, date);
+export async function spendFreeze(habitId: number, userId: number, date: string): Promise<boolean> {
+  await assertCanEdit(habitId, userId);
+  if ((await availableFreezes(userId)) <= 0) return false;
+  await dbRun(
+    "INSERT OR IGNORE INTO streak_freezes (user_id, habit_id, date) VALUES (?, ?, ?)",
+    [userId, habitId, date],
+  );
   return true;
 }
 
 // The most recent past scheduled day that was missed and not already frozen.
-export function lastMissedDay(habit: Habit, userId: number): string | null {
+export async function lastMissedDay(habit: Habit, userId: number): Promise<string | null> {
   const schedule = parseSchedule(habit.schedule);
-  const done = completionSet(habit.id, userId);
-  const frozen = freezesFor(habit.id, userId);
+  const done = await completionSet(habit.id, userId);
+  const frozen = await freezesFor(habit.id, userId);
   const today = todayStr();
   const days = scheduledDaysBetween(addDays(today, -30), today, schedule).filter(
     (d) => d < today && !done.has(d) && !frozen.has(d),
@@ -692,12 +677,12 @@ export interface LeaderRow {
   xp: number;
   me: boolean;
 }
-export function leaderboard(userId: number): LeaderRow[] {
+export async function leaderboard(userId: number): Promise<LeaderRow[]> {
   const rows: LeaderRow[] = [];
-  const me = getUserById(userId);
-  if (me) rows.push({ user_id: userId, name: me.name, xp: userXp(userId), me: true });
-  for (const c of listConnections(userId)) {
-    rows.push({ user_id: c.user_id, name: c.name, xp: userXp(c.user_id), me: false });
+  const me = await getUserById(userId);
+  if (me) rows.push({ user_id: userId, name: me.name, xp: await userXp(userId), me: true });
+  for (const c of await listConnections(userId)) {
+    rows.push({ user_id: c.user_id, name: c.name, xp: await userXp(c.user_id), me: false });
   }
   rows.sort((a, b) => b.xp - a.xp);
   return rows;
@@ -714,40 +699,35 @@ export interface Challenge {
   status: string;
 }
 
-export function createChallenge(fromId: number, toId: number, days: number): void {
-  if (fromId === toId || !areConnected(fromId, toId)) throw new AuthzError();
+export async function createChallenge(fromId: number, toId: number, days: number): Promise<void> {
+  if (fromId === toId || !(await areConnected(fromId, toId))) throw new AuthzError();
   const start = todayStr();
   const end = addDays(start, Math.max(1, days) - 1);
-  getDb()
-    .prepare(
-      "INSERT INTO challenges (a_user_id, b_user_id, starts_on, ends_on, status) VALUES (?, ?, ?, ?, 'pending')",
-    )
-    .run(fromId, toId, start, end);
+  await dbRun(
+    "INSERT INTO challenges (a_user_id, b_user_id, starts_on, ends_on, status) VALUES (?, ?, ?, ?, 'pending')",
+    [fromId, toId, start, end],
+  );
 }
 
-export function respondChallenge(id: number, userId: number, accept: boolean): void {
-  getDb()
-    .prepare(
-      "UPDATE challenges SET status = ? WHERE id = ? AND b_user_id = ? AND status = 'pending'",
-    )
-    .run(accept ? "active" : "declined", id, userId);
+export async function respondChallenge(id: number, userId: number, accept: boolean): Promise<void> {
+  await dbRun(
+    "UPDATE challenges SET status = ? WHERE id = ? AND b_user_id = ? AND status = 'pending'",
+    [accept ? "active" : "declined", id, userId],
+  );
 }
 
-export function listChallenges(userId: number): Challenge[] {
-  return getDb()
-    .prepare(
-      "SELECT * FROM challenges WHERE a_user_id = ? OR b_user_id = ? ORDER BY ends_on DESC",
-    )
-    .all(userId, userId) as Challenge[];
+export async function listChallenges(userId: number): Promise<Challenge[]> {
+  return dbAll<Challenge>(
+    "SELECT * FROM challenges WHERE a_user_id = ? OR b_user_id = ? ORDER BY ends_on DESC",
+    [userId, userId],
+  );
 }
 
 // check-ins by a user within [start, end] inclusive — the challenge metric.
-export function checkinsBetween(userId: number, start: string, end: string): number {
-  return (
-    getDb()
-      .prepare(
-        "SELECT COUNT(*) AS n FROM completions WHERE user_id = ? AND date >= ? AND date <= ?",
-      )
-      .get(userId, start, end) as { n: number }
-  ).n;
+export async function checkinsBetween(userId: number, start: string, end: string): Promise<number> {
+  const row = await dbGet<{ n: number }>(
+    "SELECT COUNT(*) AS n FROM completions WHERE user_id = ? AND date >= ? AND date <= ?",
+    [userId, start, end],
+  );
+  return Number(row?.n ?? 0);
 }

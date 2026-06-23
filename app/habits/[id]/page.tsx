@@ -55,34 +55,35 @@ export default async function HabitDetailPage({
   const { id } = await params;
   let habit;
   try {
-    habit = getHabit(Number(id), user.id);
+    habit = await getHabit(Number(id), user.id);
   } catch (e) {
     if (e instanceof AuthzError) notFound();
     throw e;
   }
 
   const today = todayStr();
-  const stats = statsFor(habit, user.id, today);
-  const completed = completionSet(habit.id, user.id);
-  const identity = habit.identity_id ? getIdentity(habit.identity_id, habit.owner_id) : undefined;
-  const stacks = stacksInvolving(habit.id);
-  const bundles = bundlesFor(habit.id);
-  const env = envFor(habit.id);
-  const contract = contractFor(habit.id);
-  const others = listHabits(user.id, true).filter((h) => h.id !== habit.id);
+  const stats = await statsFor(habit, user.id, today);
+  const completed = await completionSet(habit.id, user.id);
+  const identity = habit.identity_id ? await getIdentity(habit.identity_id, habit.owner_id) : undefined;
+  const stacks = await stacksInvolving(habit.id);
+  const bundles = await bundlesFor(habit.id);
+  const env = await envFor(habit.id);
+  const contract = await contractFor(habit.id);
+  const others = (await listHabits(user.id, true)).filter((h) => h.id !== habit.id);
   const laws = LAWS[habit.type];
   const isBad = habit.type === "bad";
   const isOwner = habit.owner_id === user.id;
 
   // paired-habit / accountability data
-  const members = membersOf(habit.id);
-  const paired = isPaired(habit.id);
-  const connections = isOwner ? listConnections(user.id) : [];
+  const members = await membersOf(habit.id);
+  const paired = await isPaired(habit.id);
+  const connections = isOwner ? await listConnections(user.id) : [];
   const memberIds = new Set(members.map((m) => m.user_id));
   const invitable = connections.filter((c) => !memberIds.has(c.user_id));
   const member = memberIds.has(user.id);
-  const freezes = member ? availableFreezes(user.id) : 0;
-  const lastMiss = member ? lastMissedDay(habit, user.id) : null;
+  const freezes = member ? await availableFreezes(user.id) : 0;
+  const lastMiss = member ? await lastMissedDay(habit, user.id) : null;
+  const doneToday = await isDone(habit.id, user.id, today);
 
   const intention =
     habit.intention_time || habit.intention_location
@@ -125,7 +126,7 @@ export default async function HabitDetailPage({
       </header>
 
       <div className="card flex flex-col gap-4">
-        <CheckOff habitId={habit.id} done={isDone(habit.id, user.id, today)} date={today} type={habit.type} gatewayText={habit.gateway_text} />
+        <CheckOff habitId={habit.id} done={doneToday} date={today} type={habit.type} gatewayText={habit.gateway_text} />
         {stats.missedTwice && (
           <div className="rounded-md border border-bad/40 bg-bad/10 px-3 py-2 text-sm text-bad">
             ⚠ Never miss twice — get back on today.

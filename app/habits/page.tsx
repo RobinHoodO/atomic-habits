@@ -9,8 +9,15 @@ export const dynamic = "force-dynamic";
 export default async function HabitsPage() {
   const user = await requireUser();
   const today = todayStr();
-  const habits = listHabits(user.id);
-  const identityName = new Map(listIdentities(user.id).map((i) => [i.id, i.name]));
+  const habits = await listHabits(user.id);
+  const identityName = new Map((await listIdentities(user.id)).map((i) => [i.id, i.name]));
+  const rows = await Promise.all(
+    habits.map(async (h) => ({
+      habit: h,
+      stats: await statsFor(h, user.id, today),
+      done: await isDone(h.id, user.id, today),
+    })),
+  );
 
   return (
     <div className="flex flex-col gap-4">
@@ -25,14 +32,14 @@ export default async function HabitsPage() {
       {habits.length === 0 ? (
         <div className="card text-muted">No habits yet.</div>
       ) : (
-        habits.map((h) => (
+        rows.map((r) => (
           <HabitCard
-            key={h.id}
-            habit={h}
-            stats={statsFor(h, user.id, today)}
-            done={isDone(h.id, user.id, today)}
+            key={r.habit.id}
+            habit={r.habit}
+            stats={r.stats}
+            done={r.done}
             date={today}
-            identityName={h.identity_id ? identityName.get(h.identity_id) : null}
+            identityName={r.habit.identity_id ? identityName.get(r.habit.identity_id) : null}
           />
         ))
       )}

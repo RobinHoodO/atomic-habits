@@ -9,7 +9,7 @@ const MEDAL = ["🥇", "🥈", "🥉"];
 
 export default async function LeaderboardPage() {
   const user = await requireUser();
-  const rows = leaderboard(user.id);
+  const rows = await leaderboard(user.id);
 
   return (
     <div className="flex flex-col gap-4">

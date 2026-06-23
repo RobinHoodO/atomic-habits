@@ -2,7 +2,7 @@ import { statsFor, type Habit, type Member } from "@/lib/habits";
 import { pct } from "./ScoreBadge";
 
 // Side-by-side progress for every member of a paired habit.
-export default function PartnerProgress({
+export default async function PartnerProgress({
   habit,
   members,
   today,
@@ -11,10 +11,12 @@ export default function PartnerProgress({
   members: Member[];
   today: string;
 }) {
+  const rows = await Promise.all(
+    members.map(async (m) => ({ m, s: await statsFor(habit, m.user_id, today) })),
+  );
   return (
     <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${Math.min(members.length, 3)}, minmax(0,1fr))` }}>
-      {members.map((m) => {
-        const s = statsFor(habit, m.user_id, today);
+      {rows.map(({ m, s }) => {
         return (
           <div key={m.user_id} className="rounded-lg border border-border bg-surface-2 p-3">
             <div className="flex items-center justify-between">

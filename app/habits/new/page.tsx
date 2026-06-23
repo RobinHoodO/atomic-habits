@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 export default async function NewHabitPage() {
   const user = await requireUser();
-  const identities = listIdentities(user.id);
+  const identities = await listIdentities(user.id);
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-xl font-bold">New habit</h1>
