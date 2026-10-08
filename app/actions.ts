@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { AuthError } from "next-auth";
 import { signIn, signOut } from "@/lib/auth";
+import { isUniqueViolation } from "@/lib/db-errors";
 import { requireUser } from "@/lib/session";
 import { createUser, getUserById } from "@/lib/users";
 import {
@@ -82,23 +83,49 @@ export async function registerAction(fd: FormData) {
   const name = reqStr(fd, "name");
   const password = reqStr(fd, "password");
   if (password.length < 8) redirect("/register?error=short");
+
+  let createUserError: unknown;
+  let createUserFailed = false;
   try {
     await createUser(email, name, password);
-  } catch {
-    redirect("/register?error=exists");
+  } catch (error) {
+    createUserError = error;
+    createUserFailed = true;
   }
+  if (createUserFailed) {
+    if (isUniqueViolation(createUserError)) {
+      redirect("/register?error=exists");
+    }
+    console.error("Failed to create user during registration", createUserError);
+    redirect("/register?error=server");
+  }
+
   await signIn("credentials", { email, password, redirectTo: "/" });
 }
 
 export async function loginAction(fd: FormData) {
   const email = reqStr(fd, "email").toLowerCase();
   const password = reqStr(fd, "password");
+
+  let signInError: unknown;
+  let signInFailed = false;
   try {
     await signIn("credentials", { email, password, redirectTo: "/" });
-  } catch (e) {
-    if (e instanceof AuthError) redirect("/login?error=1");
-    throw e;
+  } catch (error) {
+    signInError = error;
+    signInFailed = true;
   }
+  if (!signInFailed) return;
+
+  if (signInError instanceof AuthError) {
+    if (signInError.type === "CredentialsSignin") {
+      redirect("/login?error=1");
+    }
+    console.error("Authentication failed during login", signInError);
+    redirect("/login?error=server");
+  }
+
+  throw signInError;
 }
 
 export async function logoutAction() {
