@@ -9,11 +9,12 @@
     "cf:build": "opennextjs-cloudflare build",
     "cf:deploy": "opennextjs-cloudflare build && wrangler deploy",
     "cf:preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
-    "test": "tsx lib/score.test.ts && tsx lib/home-cadence.test.ts && tsx lib/home-sql.test.ts"
+    "test": "tsx lib/score.test.ts && tsx lib/home-cadence.test.ts && tsx lib/home-sql.test.ts && tsx lib/db-neon.test.ts"
   },
   "dependencies": {
     "@elevenlabs/react": "^1.7.0",
     "@libsql/client": "^0.17.4",
+    "@neondatabase/serverless": "^1.2.0",
     "@opennextjs/cloudflare": "^1.20.9",
     "bcryptjs": "^3.0.3",
     "next": "16.3.8",
