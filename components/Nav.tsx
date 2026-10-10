@@ -9,9 +9,9 @@ import { logoutAction } from "@/app/actions";
 // 3–5 primary destinations; everything else grouped behind progressive
 // disclosure ("More"), chunked into ≤5 labelled groups (Miller's law).
 const PRIMARY = [
-  { href: "/", label: "Today" },
-  { href: "/habits", label: "Habits" },
-  { href: "/home", label: "Home" },
+  { href: "/", label: "I dag" },
+  { href: "/habits", label: "Vaner" },
+  { href: "/home", label: "Hjem" },
 ];
 
 const GROUPS: { label: string; items: { href: string; label: string }[] }[] = [

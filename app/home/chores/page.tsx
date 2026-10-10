@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/session";
 import {
@@ -28,6 +27,7 @@ import {
   deleteChoreAction,
   logChoreAction,
   seedStarterAction,
+  addMemberAction,
 } from "@/app/home-actions";
 
 export const dynamic = "force-dynamic";
@@ -157,8 +157,9 @@ const DOT: Record<DueState, string> = {
   none: "bg-border",
 };
 
-export default async function ChoresPage() {
+export default async function ChoresPage({ searchParams }: { searchParams: Promise<{ invite?: string }> }) {
   const user = await requireUser();
+  const { invite } = await searchParams;
   const home = await homeForUser(user.id);
   if (!home) redirect("/home");
 
@@ -226,8 +227,22 @@ export default async function ChoresPage() {
           <h1 className="text-xl font-bold">Rutiner</h1>
           <p className="text-sm text-muted">Hvem, hvor ofte, og hva «gjort» betyr.</p>
         </div>
-        <Link href="/home" className="btn">← I dag</Link>
       </header>
+
+      {members.length < 2 && (
+        <section className="card flex flex-col gap-2">
+          <h2 className="text-sm font-semibold">Inviter partneren din</h2>
+          {invite === "no-account" && (
+            <p className="text-xs text-bad">Ingen konto med den e-posten ennå. De må registrere seg først.</p>
+          )}
+          {invite === "already" && <p className="text-xs text-muted">Allerede med.</p>}
+          {invite === "added" && <p className="text-xs text-good">Lagt til! 🎉</p>}
+          <form action={addMemberAction} className="flex gap-2 text-sm">
+            <input className="input flex-1" name="email" type="email" placeholder="partner@epost.no" required />
+            <button className="btn btn-primary">Legg til</button>
+          </form>
+        </section>
+      )}
 
       <details id="ny" className="card" open={chores.length > 0 ? undefined : true}>
         <summary className="cursor-pointer list-none font-medium">+ Ny rutine</summary>

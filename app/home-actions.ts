@@ -125,7 +125,15 @@ async function parseChore(fd: FormData, homeId: number, userId: number): Promise
   };
 }
 
+// Where Gjort / add lands afterwards. Allowlist: no open redirect.
+const BACK = new Set(["/", "/home/tasks"]);
+function backTo(fd: FormData): string | null {
+  const b = str(fd, "back");
+  return b && BACK.has(b) ? b : null;
+}
+
 function refresh() {
+  revalidatePath("/");
   revalidatePath("/home");
   revalidatePath("/home/chores");
 }
@@ -136,7 +144,7 @@ export async function createHomeAction(fd: FormData) {
   if (await homeForUser(user.id)) redirect("/home"); // already has one
   await createHome(user.id, reqStr(fd, "name"));
   revalidatePath("/home");
-  redirect("/home");
+  redirect("/home/chores");
 }
 
 export async function seedStarterAction() {
@@ -151,7 +159,7 @@ export async function addMemberAction(fd: FormData) {
   const user = await requireUser();
   const res = await addMemberByEmail(await requireHomeId(user.id), user.id, reqStr(fd, "email"));
   revalidatePath("/home");
-  redirect(`/home?invite=${res}`);
+  redirect(`/home/chores?invite=${res}`);
 }
 
 // ===== chores =====
@@ -159,7 +167,6 @@ export async function addChoreAction(fd: FormData) {
   const user = await requireUser();
   const homeId = await requireHomeId(user.id);
   await addChore(homeId, user.id, await parseChore(fd, homeId, user.id));
-  if (str(fd, "from") === "today") redirect("/home");
   revalidatePath("/home");
   revalidatePath("/home/chores");
 }
@@ -183,14 +190,15 @@ export async function logChoreAction(fd: FormData) {
   const user = await requireUser();
   const logId = await logChore(int(fd, "id"), user.id);
   refresh();
-  if (str(fd, "from") === "today") redirect(logId ? `/home?undo=${logId}` : "/home");
+  const back = backTo(fd);
+  if (back) redirect(logId ? `${back}?undo=${logId}` : back);
 }
 
 export async function undoChoreAction(fd: FormData) {
   const user = await requireUser();
   await undoChoreLog(int(fd, "log"), user.id);
   refresh();
-  redirect("/home");
+  redirect(backTo(fd) ?? "/");
 }
 
 export async function skipChoreAction(fd: FormData) {
@@ -227,7 +235,8 @@ export async function addTaskAction(fd: FormData) {
     typeof owner === "number" ? owner : null, // a Task has no Bytter på
   );
   refresh();
-  if (str(fd, "from") === "today") redirect("/home");
+  const back = backTo(fd);
+  if (back) redirect(back);
 }
 
 export async function setTaskDayAction(fd: FormData) {
@@ -242,7 +251,8 @@ export async function completeTaskAction(fd: FormData) {
   const undo = str(fd, "undo") === "1";
   await setTaskDone(id, user.id, !undo);
   refresh();
-  if (!undo && str(fd, "from") === "today") redirect(`/home?undoTask=${id}`);
+  const back = backTo(fd);
+  if (back) redirect(undo ? back : `${back}?undoTask=${id}`);
 }
 
 export async function deleteTaskAction(fd: FormData) {

@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/session";
 import { homeForUser, homeMembers, listRewards, listRedemptions, walletByMember } from "@/lib/home";
@@ -29,7 +28,6 @@ export default async function PremierPage({ searchParams }: { searchParams: Prom
           <h1 className="text-xl font-bold">Premier</h1>
           <p className="text-sm text-muted">Samle poeng. Løs dem inn hos den andre.</p>
         </div>
-        <Link href="/home" className="btn">← I dag</Link>
       </header>
 
       <div className="card flex flex-wrap gap-x-6 gap-y-1 text-sm">
