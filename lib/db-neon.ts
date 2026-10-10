@@ -18,6 +18,8 @@ const ID_TABLES = new Set([
   "chores",
   "chore_logs",
   "home_tasks",
+  "home_rewards",
+  "home_redemptions",
 ]);
 
 let neonFactory = neon;

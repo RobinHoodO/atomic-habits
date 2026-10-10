@@ -1,14 +1,17 @@
 // Run with: npx tsx lib/home-cadence.test.ts
 import assert from "node:assert";
 import {
-  dueFor,
   daysBetween,
-  rotatingAssignee,
+  turnOwner,
+  firstDue,
+  nextAfterRound,
+  nextFixedDay,
+  dueState,
+  isVedBehov,
+  nearestWeekend,
   fairness,
   taskIsStale,
   cadenceDays,
-  urgency,
-  homeHealth,
 } from "./home-cadence";
 
 const today = "2026-06-20";
@@ -17,36 +20,44 @@ const today = "2026-06-20";
 assert.equal(daysBetween("2026-06-20", "2026-06-27"), 7);
 assert.equal(daysBetween("2026-06-27", "2026-06-20"), -7);
 
-// --- dueFor ---
+// --- Bytter på: next turn = whoever did not do the last round ---
 {
-  // never done → due now
-  assert.equal(dueFor("weekly", null, today).state, "due");
-  // done today, weekly → upcoming in 7
-  const u = dueFor("weekly", today, today);
-  assert.equal(u.state, "upcoming");
-  assert.equal(u.daysLeft, 7);
-  assert.equal(u.dueOn, "2026-06-27");
-  // done 8 days ago, weekly → overdue by 1
-  const o = dueFor("weekly", "2026-06-12", today);
-  assert.equal(o.state, "overdue");
-  assert.equal(o.daysLeft, -1);
-  // done exactly a period ago → due today
-  assert.equal(dueFor("weekly", "2026-06-13", today).state, "due");
-  // seasonal/adhoc → no schedule
-  assert.equal(dueFor("seasonal", "2026-01-01", today).state, "none");
-  assert.equal(dueFor("adhoc", null, today).state, "none");
+  assert.equal(turnOwner([10, 20], 10), 20);
+  assert.equal(turnOwner([10, 20], 20), 10);
+  assert.equal(turnOwner([10, 20], null), 10, "never done → first member");
+  assert.equal(turnOwner([], 10), null);
 }
 
-// --- rotating assignee: alternates every period, deterministic ---
+// --- repeat rules (2026-06-20 is a Saturday) ---
 {
-  const members = [10, 20];
-  const a = rotatingAssignee(members, "weekly", "2026-01-05"); // idx 0
-  const b = rotatingAssignee(members, "weekly", "2026-01-12"); // idx 1
-  const c = rotatingAssignee(members, "weekly", "2026-01-19"); // idx 2 → wraps to 0
-  assert.equal(a, 10);
-  assert.equal(b, 20);
-  assert.equal(c, 10);
+  const after = { cadence: "weekly" as const, every_days: null, weekdays: null, every_weeks: null };
+  assert.equal(firstDue(after, today), "2026-06-27", "new Routine: one round out");
+  assert.equal(nextAfterRound(after, "2026-06-15", today), "2026-06-27", "Etter utført counts from done day");
+  assert.equal(firstDue({ ...after, every_days: 10 }, today), "2026-06-30", "Annet overrides cadence");
+  const vb = { ...after, cadence: "adhoc" as const };
+  assert.equal(isVedBehov(vb), true);
+  assert.equal(firstDue(vb, today), null, "Ved behov has no date");
+
+  // Faste dager: Mon (1) + Thu (4)
+  const fixed = { ...after, weekdays: "1,4", every_weeks: 1 };
+  assert.equal(nextFixedDay("2026-06-20", [1, 4]), "2026-06-22", "Sat → next Mon");
+  assert.equal(nextFixedDay("2026-06-22", [1, 4]), "2026-06-25", "Mon → Thu");
+  assert.equal(nextAfterRound(fixed, "2026-06-15", today), "2026-06-22", "missed: next match after today");
+  assert.equal(nextAfterRound(fixed, "2026-06-25", "2026-06-23"), "2026-06-29", "done early: counts for the coming date");
+  // every 2 weeks: anchor week of 2026-01-05 is "on"; 2026-06-22 is 24 weeks later → on
+  assert.equal(nextFixedDay("2026-06-20", [1], 2), "2026-06-22");
+  assert.equal(nextFixedDay("2026-06-22", [1], 2), "2026-07-06", "skips the off week");
 }
+
+// --- due state from a stored date ---
+assert.equal(dueState("2026-06-19", today).state, "overdue");
+assert.equal(dueState(today, today).state, "due");
+assert.equal(dueState("2026-06-21", today).daysLeft, 1);
+assert.equal(dueState(null, today).state, "none");
+
+// --- "I helgen" ---
+assert.equal(nearestWeekend("2026-06-17"), "2026-06-20", "Wed → Sat");
+assert.equal(nearestWeekend("2026-06-21"), "2026-06-21", "Sun stays Sun");
 
 // --- fairness ---
 {
@@ -68,29 +79,5 @@ assert.equal(taskIsStale("2026-06-10", today), false, "10 days → not stale");
 // --- cadence days sanity ---
 assert.equal(cadenceDays("daily"), 1);
 assert.equal(cadenceDays("annual"), 365);
-
-// --- urgency (Tody gradient) ---
-{
-  assert.equal(urgency("weekly", null, today), "overdue", "never done → overdue");
-  assert.equal(urgency("weekly", today, today), "fresh", "just done → fresh");
-  assert.equal(urgency("weekly", "2026-06-15", today), "soon", "5/7 elapsed → soon");
-  assert.equal(urgency("weekly", "2026-06-12", today), "overdue", "8/7 elapsed → overdue");
-  assert.equal(urgency("seasonal", "2026-01-01", today), "none", "seasonal → none");
-}
-
-// --- home health ---
-{
-  const h = homeHealth(
-    [
-      { cadence: "daily", lastDone: today }, // fresh
-      { cadence: "weekly", lastDone: "2026-06-01" }, // overdue
-      { cadence: "seasonal", lastDone: null }, // excluded
-    ],
-    today,
-  );
-  assert.equal(h.total, 2, "seasonal excluded");
-  assert.equal(h.onTrack, 1);
-  assert.equal(Math.round(h.score * 100), 50);
-}
 
 console.log("✓ all home-cadence checks passed");

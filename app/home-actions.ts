@@ -10,14 +10,25 @@ import {
   updateChore,
   deleteChore,
   logChore,
+  undoChoreLog,
+  skipChore,
+  postponeChore,
+  giveAwayChore,
+  memberIds,
+  addReward,
+  deleteReward,
+  redeemReward,
+  markRedemptionGiven,
   addTask,
+  setTaskDay,
   completeTask,
   deleteTask,
   homeForUser,
   type ChoreInput,
 } from "@/lib/home";
 import { seedStarter } from "@/lib/home-seed";
-import { cadencePoints, type Cadence } from "@/lib/home-cadence";
+import { cadencePoints, nearestWeekend, type Cadence } from "@/lib/home-cadence";
+import { todayStr, addDays } from "@/lib/score";
 
 const CADENCE_KEYS = new Set<Cadence>([
   "daily", "weekly", "biweekly", "monthly", "quarterly", "semiannual", "annual", "seasonal", "adhoc",
@@ -44,21 +55,73 @@ async function requireHomeId(userId: number): Promise<number> {
   return h.id;
 }
 
-function parseChore(fd: FormData): ChoreInput {
-  const cadenceRaw = str(fd, "cadence") as Cadence | null;
-  const cadence: Cadence = cadenceRaw && CADENCE_KEYS.has(cadenceRaw) ? cadenceRaw : "weekly";
-  const assigneeRaw = str(fd, "assignee_user_id");
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+function date(fd: FormData, k: string): string | null {
+  const v = str(fd, k);
+  return v && DATE_RE.test(v) ? v : null;
+}
+
+// Owner picker: "me" | "felles" | "turns" | a member's user id.
+async function parseOwner(fd: FormData, homeId: number, userId: number): Promise<number | "felles" | "turns"> {
+  const o = str(fd, "owner") ?? "me";
+  if (o === "felles" || o === "turns") return o;
+  if (o === "me") return userId;
+  const id = Number(o);
+  if (!(await memberIds(homeId)).includes(id)) throw new Error("owner is not in this home");
+  return id;
+}
+
+// Day picker for Tasks and Utsett: "today" | "tomorrow" | "weekend" | "later" | "date" (+ field "date").
+function parseDay(fd: FormData): string | null {
+  const today = todayStr();
+  switch (str(fd, "day")) {
+    case "today":
+      return today;
+    case "tomorrow":
+      return addDays(today, 1);
+    case "weekend":
+      return nearestWeekend(today);
+    case "date":
+      return date(fd, "date");
+    default:
+      return null; // Senere
+  }
+}
+
+const UNIT_DAYS: Record<string, number> = { d: 1, w: 7, m: 30 }; // ponytail: a month is 30 days
+
+async function parseChore(fd: FormData, homeId: number, userId: number): Promise<ChoreInput> {
+  const fixed = str(fd, "rule") === "fixed";
+  const cadenceRaw = str(fd, "cadence");
+  const custom = cadenceRaw === "custom";
+  const cadence: Cadence =
+    cadenceRaw && CADENCE_KEYS.has(cadenceRaw as Cadence) ? (cadenceRaw as Cadence) : "weekly";
+  const n = Math.max(1, Math.min(999, Math.floor(Number(str(fd, "every_n")) || 1)));
+  const weekdays = fd
+    .getAll("wd")
+    .map(Number)
+    .filter((d) => Number.isInteger(d) && d >= 0 && d <= 6);
+  const owner = await parseOwner(fd, homeId, userId);
   const pointsRaw = str(fd, "points");
   return {
     title: reqStr(fd, "title"),
     area: str(fd, "area"),
-    cadence,
+    cadence: fixed || custom ? "weekly" : cadence,
+    every_days: !fixed && custom ? n * (UNIT_DAYS[str(fd, "unit") ?? "d"] ?? 1) : null,
+    weekdays: fixed && weekdays.length ? weekdays.join(",") : null,
+    every_weeks: fixed ? Math.max(1, Math.min(4, Number(str(fd, "every_weeks")) || 1)) : null,
+    next_due: date(fd, "next_due"),
     points: pointsRaw && Number.isFinite(Number(pointsRaw)) ? Math.max(0, Number(pointsRaw)) : cadencePoints(cadence),
-    assignee_user_id: assigneeRaw ? Number(assigneeRaw) : null,
-    rotating: str(fd, "rotating") === "1",
-    conditional_note: str(fd, "conditional_note"),
+    assignee_user_id: typeof owner === "number" ? owner : null,
+    rotating: owner === "turns",
+    conditional_note: owner === "felles" ? str(fd, "conditional_note") : null,
     standard: str(fd, "standard"),
   };
+}
+
+function refresh() {
+  revalidatePath("/home");
+  revalidatePath("/home/chores");
 }
 
 // ===== home setup =====
@@ -88,14 +151,17 @@ export async function addMemberAction(fd: FormData) {
 // ===== chores =====
 export async function addChoreAction(fd: FormData) {
   const user = await requireUser();
-  await addChore(await requireHomeId(user.id), user.id, parseChore(fd));
+  const homeId = await requireHomeId(user.id);
+  await addChore(homeId, user.id, await parseChore(fd, homeId, user.id));
+  if (str(fd, "from") === "today") redirect("/home");
   revalidatePath("/home");
   revalidatePath("/home/chores");
 }
 
 export async function updateChoreAction(fd: FormData) {
   const user = await requireUser();
-  await updateChore(int(fd, "id"), user.id, parseChore(fd));
+  const homeId = await requireHomeId(user.id);
+  await updateChore(int(fd, "id"), user.id, await parseChore(fd, homeId, user.id));
   revalidatePath("/home");
   revalidatePath("/home/chores");
 }
@@ -109,29 +175,102 @@ export async function deleteChoreAction(fd: FormData) {
 
 export async function logChoreAction(fd: FormData) {
   const user = await requireUser();
-  await logChore(int(fd, "id"), user.id);
-  revalidatePath("/home");
-  revalidatePath("/home/chores");
+  const logId = await logChore(int(fd, "id"), user.id);
+  refresh();
+  if (str(fd, "from") === "today") redirect(`/home?undo=${logId}`);
+}
+
+export async function undoChoreAction(fd: FormData) {
+  const user = await requireUser();
+  await undoChoreLog(int(fd, "log"), user.id);
+  refresh();
+  redirect("/home");
+}
+
+export async function skipChoreAction(fd: FormData) {
+  const user = await requireUser();
+  await skipChore(int(fd, "id"), user.id);
+  refresh();
+}
+
+export async function postponeChoreAction(fd: FormData) {
+  const user = await requireUser();
+  const day = parseDay(fd);
+  if (!day) throw new Error("Pick a day");
+  await postponeChore(int(fd, "id"), user.id, day);
+  refresh();
+}
+
+export async function giveAwayChoreAction(fd: FormData) {
+  const user = await requireUser();
+  await giveAwayChore(int(fd, "id"), user.id);
+  refresh();
 }
 
 // ===== ad-hoc backlog =====
 export async function addTaskAction(fd: FormData) {
   const user = await requireUser();
+  const homeId = await requireHomeId(user.id);
   const pts = str(fd, "points");
-  await addTask(await requireHomeId(user.id), user.id, reqStr(fd, "title"), pts ? Math.max(0, Number(pts)) : 5);
-  revalidatePath("/home/tasks");
-  revalidatePath("/home");
+  const owner = await parseOwner(fd, homeId, user.id);
+  await addTask(
+    homeId,
+    user.id,
+    reqStr(fd, "title"),
+    pts ? Math.max(0, Number(pts)) : 5,
+    parseDay(fd),
+    typeof owner === "number" ? owner : null, // a Task has no Bytter på
+  );
+  refresh();
+  if (str(fd, "from") === "today") redirect("/home");
+}
+
+export async function setTaskDayAction(fd: FormData) {
+  const user = await requireUser();
+  await setTaskDay(int(fd, "id"), user.id, parseDay(fd));
+  refresh();
 }
 
 export async function completeTaskAction(fd: FormData) {
   const user = await requireUser();
-  await completeTask(int(fd, "id"), user.id);
-  revalidatePath("/home/tasks");
-  revalidatePath("/home");
+  const id = int(fd, "id");
+  await completeTask(id, user.id);
+  refresh();
+  if (str(fd, "from") === "today") redirect(`/home?undoTask=${id}`);
 }
 
 export async function deleteTaskAction(fd: FormData) {
   const user = await requireUser();
   await deleteTask(int(fd, "id"), user.id);
-  revalidatePath("/home/tasks");
+  refresh();
+}
+
+// ===== Premier: prizes bought with Home points =====
+export async function addRewardAction(fd: FormData) {
+  const user = await requireUser();
+  const cost = Math.floor(Number(str(fd, "cost")));
+  if (!Number.isFinite(cost) || cost < 1) throw new Error("Cost must be at least 1 point");
+  await addReward(await requireHomeId(user.id), user.id, reqStr(fd, "title"), cost);
+  revalidatePath("/home/premier");
+}
+
+export async function deleteRewardAction(fd: FormData) {
+  const user = await requireUser();
+  await deleteReward(int(fd, "id"), user.id);
+  revalidatePath("/home/premier");
+}
+
+export async function redeemRewardAction(fd: FormData) {
+  const user = await requireUser();
+  const res = await redeemReward(int(fd, "id"), user.id);
+  refresh();
+  revalidatePath("/home/premier");
+  redirect(`/home/premier?r=${res}`);
+}
+
+export async function markGivenAction(fd: FormData) {
+  const user = await requireUser();
+  await markRedemptionGiven(int(fd, "id"), user.id);
+  refresh();
+  revalidatePath("/home/premier");
 }
