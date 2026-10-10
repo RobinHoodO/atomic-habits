@@ -3,9 +3,10 @@ import { requireUser } from "@/lib/session";
 import { homeForUser, homeMembers, listTasks, type HomeTask } from "@/lib/home";
 import { taskIsStale, daysBetween } from "@/lib/home-cadence";
 import { todayStr } from "@/lib/score";
-import { addTaskAction, completeTaskAction } from "@/app/home-actions";
+import { addTaskAction } from "@/app/home-actions";
 import DayPicker from "@/components/DayPicker";
 import TodayRow from "@/components/TodayRow";
+import GjortProvider, { UndoBars } from "@/components/GjortProvider";
 
 export const dynamic = "force-dynamic";
 
@@ -13,12 +14,11 @@ const PILL =
   "btn cursor-pointer text-xs has-[:checked]:border-accent has-[:checked]:bg-accent has-[:checked]:text-white";
 
 // Oppgaver: every open Task (the backlog), dated ones first, then Senere.
-export default async function TasksPage({ searchParams }: { searchParams: Promise<{ undoTask?: string }> }) {
+export default async function TasksPage() {
   const user = await requireUser();
   const home = await homeForUser(user.id);
   if (!home) redirect("/home");
 
-  const { undoTask } = await searchParams;
   const today = todayStr();
   const members = await homeMembers(home.id);
   const nameOf = new Map(members.map((m) => [Number(m.user_id), m.name]));
@@ -27,7 +27,6 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
   const dated = open.filter((t) => t.due_on).sort((a, b) => a.due_on!.localeCompare(b.due_on!));
   const later = open.filter((t) => !t.due_on);
   const done = tasks.filter((t) => t.done_at).sort((a, b) => b.done_at!.localeCompare(a.done_at!)).slice(0, 20);
-  const undone = Number.isInteger(Number(undoTask)) && undoTask ? done.find((t) => t.id === Number(undoTask)) : undefined;
 
   function owner(t: HomeTask): string {
     if (t.owner_user_id == null) return "Felles";
@@ -54,21 +53,14 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
         late={late > 0 || stale}
         meta={[owner(t), `+${t.points} p`]}
         date={today}
-        back="/home/tasks"
       />
     );
   }
 
   return (
+    <GjortProvider>
     <div className="flex flex-col gap-5">
-      {undone && (
-        <form action={completeTaskAction} className="card flex items-center justify-between gap-3 py-2 text-sm">
-          <input type="hidden" name="id" value={undone.id} />
-          <input type="hidden" name="undo" value="1" />
-          <span className="min-w-0 truncate">✓ «{undone.title}» gjort</span>
-          <button className="btn">Angre</button>
-        </form>
-      )}
+      <UndoBars />
 
       <form action={addTaskAction} className="card flex flex-col gap-2 text-sm">
         <input type="hidden" name="back" value="/home/tasks" />
@@ -129,5 +121,6 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
         </details>
       )}
     </div>
+    </GjortProvider>
   );
 }

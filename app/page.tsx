@@ -1,13 +1,12 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { listHabits, listIdentities, statsFor, isDone } from "@/lib/habits";
+import { Suspense } from "react";
+import { listHabits, listIdentities, statsForMany } from "@/lib/habits";
 import { parseSchedule, isScheduledDay, todayStr } from "@/lib/score";
 import { requireUser } from "@/lib/session";
-import { dbGet } from "@/lib/db";
 import {
   homeForUser,
   homeMembers,
-  memberIds,
   listChores,
   lastDoneByChore,
   lastDoerByChore,
@@ -20,10 +19,11 @@ import {
 import { isWeekend, taskIsStale } from "@/lib/home-cadence";
 import { buildToday, type Item } from "@/lib/home-today";
 import { toggleCompletionAction } from "@/app/actions";
-import { addTaskAction, completeTaskAction, undoChoreAction, markGivenAction } from "@/app/home-actions";
+import { addTaskAction, markGivenAction } from "@/app/home-actions";
 import GameStrip from "@/components/GameStrip";
 import DayPicker from "@/components/DayPicker";
 import TodayRow from "@/components/TodayRow";
+import GjortProvider, { UndoBars } from "@/components/GjortProvider";
 
 export const dynamic = "force-dynamic";
 
@@ -34,46 +34,52 @@ const DAYS_CHOICES = [3, 7, 14];
 export default async function TodayPage({
   searchParams,
 }: {
-  searchParams: Promise<{ undo?: string; undoTask?: string; n?: string }>;
+  searchParams: Promise<{ n?: string }>;
 }) {
   const user = await requireUser();
   const today = todayStr();
-  const { undo, undoTask, n } = await searchParams;
+  const { n } = await searchParams;
   const days = DAYS_CHOICES.includes(Number(n)) ? Number(n) : 7;
 
-  const habits = await listHabits(user.id);
-  const identities = await listIdentities(user.id);
-  const home = await homeForUser(user.id);
+  const [habits, identities, home] = await Promise.all([
+    listHabits(user.id),
+    listIdentities(user.id),
+    homeForUser(user.id),
+  ]);
   // Only greet true cold-starts with the wizard.
   if (habits.length === 0 && identities.length === 0 && !home) redirect("/onboarding");
 
-  // ---- habits ----
-  const habitRows = await Promise.all(
-    habits.map(async (h) => ({
-      habit: h,
-      stats: await statsFor(h, user.id, today),
-      done: await isDone(h.id, user.id, today),
-      scheduledToday: isScheduledDay(today, parseSchedule(h.schedule)),
-    })),
-  );
+  // ---- habits + home data, loaded together ----
+  const [statsMap, members, chores, lastDone, lastDoer, allTasks, redemptions] = await Promise.all([
+    statsForMany(habits, user.id, today),
+    home ? homeMembers(home.id) : Promise.resolve([]),
+    home ? listChores(home.id) : Promise.resolve([]),
+    home ? lastDoneByChore(home.id) : Promise.resolve({} as Record<number, string>),
+    home ? lastDoerByChore(home.id) : Promise.resolve({} as Record<number, number>),
+    home ? listTasks(home.id) : Promise.resolve([]),
+    home ? listRedemptions(home.id) : Promise.resolve([]),
+  ]);
+  const ids = members.map((m) => Number(m.user_id)).sort((a, b) => a - b);
+  const wallet = home ? await walletByMember(home.id, ids) : {};
+
+  const habitRows = habits.flatMap((h) => {
+    const stats = statsMap.get(h.id);
+    if (!stats) return [];
+    return [{ habit: h, stats, done: stats.done, scheduledToday: isScheduledDay(today, parseSchedule(h.schedule)) }];
+  });
   const dueHabits = habitRows.filter((r) => r.scheduledToday && !r.done);
   const doneHabits = habitRows.filter((r) => r.done);
 
   // ---- home ----
-  const members = home ? await homeMembers(home.id) : [];
   const nameOf = new Map(members.map((m) => [Number(m.user_id), m.name]));
   const partner = members.find((m) => Number(m.user_id) !== user.id);
-  const chores = home ? await listChores(home.id) : [];
   const choreById = new Map(chores.map((c) => [c.id, c]));
-  const lastDone = home ? await lastDoneByChore(home.id) : {};
-  const lastDoer = home ? await lastDoerByChore(home.id) : {};
-  const allTasks = home ? await listTasks(home.id) : [];
   const openTasks = allTasks.filter((t) => !t.done_at);
   const taskById = new Map(openTasks.map((x) => [x.id, x]));
   const t = buildToday(
     chores.map((c) => ({ ...c, due: effectiveDue(c, lastDone[c.id] ?? null), lastDoer: lastDoer[c.id] ?? null })),
     openTasks,
-    home ? await memberIds(home.id) : [],
+    ids,
     user.id,
     days,
     today,
@@ -87,22 +93,9 @@ export default async function TodayPage({
   );
   const weekend = isWeekend(today);
   const homeMine = weekend ? [...t.mine, ...t.later.filter((i) => staleIds.has(i.id))] : t.mine;
-  const wallet = home ? await walletByMember(home.id) : {};
   const toGive = home
-    ? (await listRedemptions(home.id)).filter((d) => !d.given_at && Number(d.user_id) !== user.id)
+    ? redemptions.filter((d) => !d.given_at && Number(d.user_id) !== user.id)
     : [];
-
-  // Angre bars: only for the viewer's own last tick.
-  const undoLog = Number.isInteger(Number(undo)) && undo
-    ? await dbGet<{ id: number; chore_id: number; user_id: number }>(
-        `SELECT id, chore_id, user_id FROM chore_logs WHERE id = ?`,
-        [Number(undo)],
-      )
-    : undefined;
-  const undoChore = undoLog && Number(undoLog.user_id) === user.id ? choreById.get(Number(undoLog.chore_id)) : undefined;
-  const undoneTask = Number.isInteger(Number(undoTask)) && undoTask
-    ? allTasks.find((x) => x.id === Number(undoTask) && x.done_at)
-    : undefined;
 
   function points(i: Item): number {
     if (i.kind === "task") return taskById.get(i.id)?.points ?? 0;
@@ -135,7 +128,6 @@ export default async function TodayPage({
         dim={dim}
         giveTo={i.kind === "routine" && i.owner === user.id && partner ? partner.name : null}
         date={today}
-        back="/"
       />
     );
   }
@@ -155,8 +147,11 @@ export default async function TodayPage({
   const nothing = late.length + dueHabits.length + onTime.length === 0;
 
   return (
+    <GjortProvider>
     <div className="flex flex-col gap-4">
-      <GameStrip userId={user.id} />
+      <Suspense fallback={null}>
+        <GameStrip userId={user.id} />
+      </Suspense>
       <header className="flex items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">I dag</h1>
@@ -167,21 +162,7 @@ export default async function TodayPage({
         {home && <Link href="/home/premier" className="btn text-sm">🎁 {wallet[user.id] ?? 0} p</Link>}
       </header>
 
-      {undoChore && (
-        <form action={undoChoreAction} className="card flex items-center justify-between gap-3 py-2 text-sm">
-          <input type="hidden" name="log" value={undoLog!.id} />
-          <span className="min-w-0 truncate">✓ «{undoChore.title}» gjort</span>
-          <button className="btn">Angre</button>
-        </form>
-      )}
-      {undoneTask && (
-        <form action={completeTaskAction} className="card flex items-center justify-between gap-3 py-2 text-sm">
-          <input type="hidden" name="id" value={undoneTask.id} />
-          <input type="hidden" name="undo" value="1" />
-          <span className="min-w-0 truncate">✓ «{undoneTask.title}» gjort</span>
-          <button className="btn">Angre</button>
-        </form>
-      )}
+      <UndoBars />
       {toGive.map((d) => (
         <form key={d.id} action={markGivenAction} className="card flex items-center justify-between gap-3 py-2 text-sm">
           <input type="hidden" name="id" value={d.id} />
@@ -221,8 +202,7 @@ export default async function TodayPage({
                 title={r.habit.name}
                 meta={[r.stats.streak > 0 ? `🔥 ${r.stats.streak}` : "Vane"]}
                 date={today}
-                back="/"
-              />
+                      />
             ))}
             {onTime.map((i) => <HomeRow key={`${i.kind}${i.id}`} i={i} />)}
           </ul>
@@ -266,5 +246,6 @@ export default async function TodayPage({
         </Fold>
       )}
     </div>
+    </GjortProvider>
   );
 }

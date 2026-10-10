@@ -1,15 +1,7 @@
 import "server-only";
 import { dbGet, dbAll, dbRun } from "./db";
-import {
-  parseSchedule,
-  currentStreak,
-  consistencyScore,
-  recoveryRate,
-  missedTwiceActive,
-  isDueToday,
-  todayStr,
-  type Schedule,
-} from "./score";
+import { parseSchedule, todayStr } from "./score";
+import { computeStats, groupDates, startDate, type HabitStats } from "./habit-stats";
 import { computeXp, earnedBadgeKeys, type BadgeCtx } from "./gamify";
 import { getUserById } from "./users";
 import { addDays, scheduledDaysBetween } from "./score";
@@ -57,14 +49,7 @@ export interface HabitInput {
   visibility: Visibility;
 }
 
-export interface HabitStats {
-  streak: number;
-  consistency: number | null;
-  recovery: number | null;
-  missedTwice: boolean;
-  due: boolean;
-  totalVotes: number;
-}
+export type { HabitStats };
 
 // ======================================================================
 // Authorization — the security boundary. Every entry point goes through
@@ -273,18 +258,48 @@ export async function statsFor(
   userId: number,
   today = todayStr(),
 ): Promise<HabitStats> {
-  const schedule: Schedule = parseSchedule(habit.schedule);
   const done = await completionSet(habit.id, userId);
   const frozen = await freezesFor(habit.id, userId);
   const since = await habitStartDate(habit.id);
-  return {
-    streak: currentStreak(schedule, done, today, frozen),
-    consistency: consistencyScore(schedule, done, today, 30, frozen, since),
-    recovery: recoveryRate(schedule, done, today, 90, since),
-    missedTwice: missedTwiceActive(schedule, done, today, frozen, since),
-    due: isDueToday(schedule, done, today, frozen),
-    totalVotes: done.size,
-  };
+  return computeStats(habit.schedule, done, frozen, since, today);
+}
+
+// statsFor + isDone for many habits in 3 queries (completions, freezes, start dates).
+export async function statsForMany(
+  habits: Habit[],
+  userId: number,
+  today = todayStr(),
+): Promise<Map<number, HabitStats & { done: boolean }>> {
+  const out = new Map<number, HabitStats & { done: boolean }>();
+  if (habits.length === 0) return out;
+  const ids = habits.map((h) => h.id);
+  const marks = ids.map(() => "?").join(",");
+  const [comps, freezes, starts] = await Promise.all([
+    dbAll<{ habit_id: number; date: string }>(
+      `SELECT habit_id, date FROM completions WHERE user_id = ? AND habit_id IN (${marks})`,
+      [userId, ...ids],
+    ),
+    dbAll<{ habit_id: number; date: string }>(
+      `SELECT habit_id, date FROM streak_freezes WHERE user_id = ? AND habit_id IN (${marks})`,
+      [userId, ...ids],
+    ),
+    dbAll<{ id: number; created_at?: string }>(
+      `SELECT id, created_at FROM habits WHERE id IN (${marks})`,
+      ids,
+    ),
+  ]);
+  const done = groupDates(comps.map((r) => ({ key: Number(r.habit_id), date: r.date })));
+  const frozen = groupDates(freezes.map((r) => ({ key: Number(r.habit_id), date: r.date })));
+  const created = new Map(starts.map((r) => [Number(r.id), r.created_at]));
+  for (const h of habits) {
+    const d = done.get(h.id) ?? new Set<string>();
+    const since = startDate(created.get(h.id), todayStr());
+    out.set(h.id, {
+      ...computeStats(h.schedule, d, frozen.get(h.id) ?? new Set<string>(), since, today),
+      done: d.has(today),
+    });
+  }
+  return out;
 }
 
 // The date this habit was created. Scoring never looks before it, so days
@@ -354,14 +369,17 @@ export interface ConnectionRow {
   status: string;
 }
 
+// One neutral answer whether or not the email has an account, so it can't be probed.
+const REQUEST_SENT = "If that person has an account, the request is on its way.";
+
 export async function requestConnection(fromId: number, toEmail: string): Promise<string> {
   const target = await dbGet<{ id: number }>(
     "SELECT id FROM users WHERE email = ?",
     [toEmail.trim().toLowerCase()],
   );
-  if (!target) return "No user with that email.";
+  if (!target) return REQUEST_SENT;
   if (Number(target.id) === fromId) return "That's you.";
-  if (await areConnected(fromId, Number(target.id))) return "Already connected.";
+  if (await areConnected(fromId, Number(target.id))) return REQUEST_SENT;
   // accept silently if they already requested you
   const reverse = await dbGet<{ id: number }>(
     "SELECT id FROM connections WHERE requester_id = ? AND addressee_id = ? AND status = 'pending'",
@@ -369,13 +387,13 @@ export async function requestConnection(fromId: number, toEmail: string): Promis
   );
   if (reverse) {
     await dbRun("UPDATE connections SET status = 'accepted' WHERE id = ?", [Number(reverse.id)]);
-    return "Connected!";
+    return REQUEST_SENT;
   }
   await dbRun(
     "INSERT OR IGNORE INTO connections (requester_id, addressee_id) VALUES (?, ?)",
     [fromId, Number(target.id)],
   );
-  return "Request sent.";
+  return REQUEST_SENT;
 }
 
 export async function acceptConnection(connId: number, userId: number): Promise<void> {
@@ -450,8 +468,11 @@ export async function addStack(anchorId: number, stackedId: number): Promise<voi
   );
 }
 
-export async function removeStack(id: number): Promise<void> {
-  await dbRun("DELETE FROM habit_stacks WHERE id = ?", [id]);
+export async function removeStack(id: number, habitId: number): Promise<void> {
+  await dbRun(
+    "DELETE FROM habit_stacks WHERE id = ? AND (anchor_habit_id = ? OR stacked_habit_id = ?)",
+    [id, habitId, habitId],
+  );
 }
 
 export interface Bundle {
@@ -471,8 +492,8 @@ export async function addBundle(habitId: number, wantText: string): Promise<void
   ]);
 }
 
-export async function removeBundle(id: number): Promise<void> {
-  await dbRun("DELETE FROM temptation_bundles WHERE id = ?", [id]);
+export async function removeBundle(id: number, habitId: number): Promise<void> {
+  await dbRun("DELETE FROM temptation_bundles WHERE id = ? AND habit_id = ?", [id, habitId]);
 }
 
 export interface EnvItem {
@@ -501,8 +522,8 @@ export async function addEnvItem(
   ]);
 }
 
-export async function removeEnvItem(id: number): Promise<void> {
-  await dbRun("DELETE FROM environment_items WHERE id = ?", [id]);
+export async function removeEnvItem(id: number, habitId: number): Promise<void> {
+  await dbRun("DELETE FROM environment_items WHERE id = ? AND habit_id = ?", [id, habitId]);
 }
 
 export interface Contract {
@@ -565,25 +586,36 @@ export async function userTotalCheckins(userId: number): Promise<number> {
 }
 
 export async function userXp(userId: number): Promise<number> {
+  const habits = await listHabits(userId, true);
+  const [stats, total] = await Promise.all([statsForMany(habits, userId), userTotalCheckins(userId)]);
   let streakSum = 0;
-  for (const h of await listHabits(userId, true)) streakSum += (await statsFor(h, userId)).streak;
-  return computeXp(await userTotalCheckins(userId), streakSum);
+  for (const s of stats.values()) streakSum += s.streak;
+  return computeXp(total, streakSum);
 }
 
 export async function badgeContext(userId: number): Promise<BadgeCtx> {
   const habits = await listHabits(userId, true);
+  const [stats, total, pairedRow] = await Promise.all([
+    statsForMany(habits, userId),
+    userTotalCheckins(userId),
+    habits.length
+      ? dbGet(
+          `SELECT 1 FROM habit_members WHERE habit_id IN (${habits.map(() => "?").join(",")})
+             GROUP BY habit_id HAVING COUNT(*) > 1`,
+          habits.map((h) => h.id),
+        )
+      : undefined,
+  ]);
   let maxStreak = 0;
   let hasRecovery = false;
-  let paired = false;
-  for (const h of habits) {
-    const s = await statsFor(h, userId);
+  for (const s of stats.values()) {
     if (s.streak > maxStreak) maxStreak = s.streak;
     if (s.recovery != null && s.recovery > 0) hasRecovery = true;
-    if (await isPaired(h.id)) paired = true;
   }
+  const paired = !!pairedRow;
   return {
     habitCount: habits.length,
-    totalCheckins: await userTotalCheckins(userId),
+    totalCheckins: total,
     maxStreak,
     hasRecovery,
     paired,

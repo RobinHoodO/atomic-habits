@@ -191,7 +191,7 @@ export async function addChore(homeId: number, userId: number, input: ChoreInput
 
 export async function updateChore(choreId: number, userId: number, input: ChoreInput): Promise<void> {
   const old = await getChore(choreId, userId); // authz
-  const oldDue = effectiveDue(old, (await lastDoneByChore(old.home_id))[choreId] ?? null);
+  const oldDue = effectiveDue(old, await lastDoneForChore(choreId));
   await dbRun(
     `UPDATE chores SET title=@title, area=@area, cadence=@cadence, points=@points,
        assignee_user_id=@assignee_user_id, rotating=@rotating, conditional_note=@conditional_note,
@@ -225,8 +225,7 @@ export const FELLES_BONUS = 1;
 export async function logChore(choreId: number, userId: number, date = todayStr()): Promise<number> {
   const c = await getChore(choreId, userId);
   const bonus = c.assignee_user_id == null && !c.rotating ? FELLES_BONUS : 0;
-  const lastDone = (await lastDoneByChore(c.home_id))[choreId] ?? null;
-  const due = effectiveDue(c, lastDone);
+  const due = effectiveDue(c, await lastDoneForChore(choreId));
   // Compare-and-set on the round: a double tap or a stale page cannot close it twice.
   const moved = await dbRun(
     `UPDATE chores SET next_due = ?, given_to = NULL WHERE id = ? AND COALESCE(next_due, '') = ?`,
@@ -264,7 +263,7 @@ export async function undoChoreLog(logId: number, userId: number): Promise<void>
 // Hopp over: close the round without a log (Bytter på keeps the same turn).
 export async function skipChore(choreId: number, userId: number, today = todayStr()): Promise<void> {
   const c = await getChore(choreId, userId);
-  const due = effectiveDue(c, (await lastDoneByChore(c.home_id))[choreId] ?? null);
+  const due = effectiveDue(c, await lastDoneForChore(choreId));
   await dbRun(
     `UPDATE chores SET next_due = ?, given_to = NULL WHERE id = ? AND COALESCE(next_due, '') = ?`,
     [nextAfterRound(c, due, today), choreId, c.next_due ?? ""],
@@ -283,6 +282,14 @@ export async function giveAwayChore(choreId: number, userId: number): Promise<vo
   const other = (await memberIds(c.home_id)).find((id) => id !== userId);
   if (other == null) throw new AuthzError("nobody to give it to");
   await dbRun(`UPDATE chores SET given_to = ? WHERE id = ?`, [other, choreId]);
+}
+
+// Last completion date of one chore.
+export async function lastDoneForChore(choreId: number): Promise<string | null> {
+  const r = await dbGet<{ last: string | null }>(`SELECT MAX(date) AS last FROM chore_logs WHERE chore_id = ?`, [
+    choreId,
+  ]);
+  return r?.last ?? null;
 }
 
 // Last completion date per chore in a home → { choreId: 'YYYY-MM-DD' }.
@@ -314,9 +321,13 @@ export async function lastDoerByChore(homeId: number): Promise<Record<number, nu
 
 // ===== points / fairness =====
 // Points per member from chore logs + completed ad-hoc tasks, optionally since a date.
-export async function pointsByMember(homeId: number, since?: string): Promise<Record<number, number>> {
+export async function pointsByMember(
+  homeId: number,
+  since?: string,
+  members?: number[], // pass the already-loaded member ids to skip a query
+): Promise<Record<number, number>> {
   const out: Record<number, number> = {};
-  for (const id of await memberIds(homeId)) out[id] = 0;
+  for (const id of members ?? (await memberIds(homeId))) out[id] = 0;
 
   const choreRows = await dbAll<{ uid: number; pts: number }>(
     `SELECT l.user_id AS uid, SUM(l.points) AS pts FROM chore_logs l
@@ -437,8 +448,8 @@ export async function listRedemptions(homeId: number): Promise<Redemption[]> {
 }
 
 // Wallet: all Home points earned minus points spent on prizes.
-export async function walletByMember(homeId: number): Promise<Record<number, number>> {
-  const out = await pointsByMember(homeId);
+export async function walletByMember(homeId: number, members?: number[]): Promise<Record<number, number>> {
+  const out = await pointsByMember(homeId, undefined, members);
   const spent = await dbAll<{ uid: number; pts: number }>(
     `SELECT user_id AS uid, SUM(cost) AS pts FROM home_redemptions WHERE home_id = ? GROUP BY user_id`,
     [homeId],

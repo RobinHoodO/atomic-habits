@@ -136,6 +136,7 @@ function refresh() {
   revalidatePath("/");
   revalidatePath("/home");
   revalidatePath("/home/chores");
+  revalidatePath("/home/tasks");
 }
 
 // ===== home setup =====
@@ -186,19 +187,22 @@ export async function deleteChoreAction(fd: FormData) {
   revalidatePath("/home/chores");
 }
 
-export async function logChoreAction(fd: FormData) {
+// Gjort for the optimistic button: returns the log id for Angre (0 = already closed by someone else).
+export async function gjortChoreAction(fd: FormData): Promise<number> {
   const user = await requireUser();
   const logId = await logChore(int(fd, "id"), user.id);
   refresh();
-  const back = backTo(fd);
-  if (back) redirect(logId ? `${back}?undo=${logId}` : back);
+  return logId;
+}
+
+export async function logChoreAction(fd: FormData) {
+  await gjortChoreAction(fd);
 }
 
 export async function undoChoreAction(fd: FormData) {
   const user = await requireUser();
   await undoChoreLog(int(fd, "log"), user.id);
   refresh();
-  redirect(backTo(fd) ?? "/");
 }
 
 export async function skipChoreAction(fd: FormData) {
@@ -251,8 +255,6 @@ export async function completeTaskAction(fd: FormData) {
   const undo = str(fd, "undo") === "1";
   await setTaskDone(id, user.id, !undo);
   refresh();
-  const back = backTo(fd);
-  if (back) redirect(undo ? back : `${back}?undoTask=${id}`);
 }
 
 export async function deleteTaskAction(fd: FormData) {
