@@ -19,6 +19,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const email = String(creds?.email ?? "").trim().toLowerCase();
         const password = String(creds?.password ?? "");
         if (!email || !password) return null;
+        // Workers Rate Limiting binding (wrangler.jsonc); no-op locally / when absent.
+        try {
+          const { getCloudflareContext } = await import("@opennextjs/cloudflare");
+          const limiter = (getCloudflareContext().env as { AUTH_LIMITER?: { limit(o: { key: string }): Promise<{ success: boolean }> } })
+            .AUTH_LIMITER;
+          if (limiter && !(await limiter.limit({ key: email })).success) return null;
+        } catch {
+          // not running on Workers
+        }
         const user = await getUserByEmail(email);
         if (!user) return null;
         const ok = await bcrypt.compare(password, user.password_hash);
