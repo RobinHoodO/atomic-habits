@@ -209,7 +209,7 @@ export default async function ChoresPage({
       <details
         key={c.id}
         id={`c${c.id}`}
-        className={`card group/item rounded-xl p-0 shadow-none ${c.id === savedChore?.id ? "saved-flash" : isNew ? NY_RING : ""}`}
+        className={`card group/item scroll-mt-24 rounded-xl p-0 shadow-none ${c.id === savedChore?.id ? "saved-flash" : isNew ? NY_RING : ""}`}
       >
         <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-1.5 [&::-webkit-details-marker]:hidden">
           <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${DOT[d.state]}`} title={d.state} />
@@ -252,7 +252,11 @@ export default async function ChoresPage({
     <div className="flex flex-col gap-3">
 
       {savedChore && (
-        <div role="status" className="card border-good px-3 py-1.5 text-sm text-good shadow-none">
+        // Fixed toast: the page jumps to the saved card, so a top bar would be off-screen.
+        <div
+          role="status"
+          className="fixed inset-x-0 bottom-20 z-40 mx-auto w-fit rounded-full border border-good bg-surface px-4 py-1.5 text-sm text-good shadow-md md:bottom-6"
+        >
           Lagret ✓ «{savedChore.title}»
         </div>
       )}
