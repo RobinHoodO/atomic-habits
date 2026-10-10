@@ -27,6 +27,7 @@ import GameStrip from "@/components/GameStrip";
 import DayPicker from "@/components/DayPicker";
 import TodayRow from "@/components/TodayRow";
 import OwnerPills from "@/components/OwnerPills";
+import { FunHeader } from "@/components/Celebrate";
 import GjortProvider, { UndoBars } from "@/components/GjortProvider";
 
 export const dynamic = "force-dynamic";
@@ -163,7 +164,13 @@ export default async function TodayPage({
   const nothing = late.length + dueHabits.length + onTime.length === 0;
 
   return (
-    <GjortProvider>
+    <GjortProvider
+      todayKeys={[
+        ...late.map((i) => `${i.kind}${i.id}`),
+        ...dueHabits.map((r) => `habit${r.habit.id}`),
+        ...onTime.map((i) => `${i.kind}${i.id}`),
+      ]}
+    >
     <div className="flex flex-col gap-4">
       <Suspense fallback={null}>
         <GameStrip userId={user.id} />
@@ -187,6 +194,7 @@ export default async function TodayPage({
           </div>
         )}
       </header>
+      <FunHeader />
 
       <UndoBars />
       {givenToMe.map((e) => (

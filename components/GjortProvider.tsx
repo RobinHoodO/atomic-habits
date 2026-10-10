@@ -2,6 +2,8 @@
 
 import { createContext, useCallback, useContext, useState, useTransition, type ReactNode } from "react";
 import { toggleCompletionAction } from "@/app/actions";
+import { celebrate, originOf, primeAudio, type Origin } from "@/components/Celebrate";
+import { listCleared } from "@/lib/fun";
 import { gjortChoreAction, undoChoreAction, completeTaskAction } from "@/app/home-actions";
 
 type Kind = "habit" | "routine" | "task";
@@ -12,7 +14,7 @@ type Ctx = {
   hidden: Set<string>;
   undos: Undo[];
   error: string | null;
-  gjort: (t: Target) => void;
+  gjort: (t: Target, origin?: Origin) => void;
   undo: (u: Undo) => void;
 };
 
@@ -36,7 +38,9 @@ function idForm(id: number, extra: Record<string, string> = {}): FormData {
 
 // Optimistic Gjort: the row disappears on tap, the server action runs in the
 // background, and an inline "Angre" bar replaces it.
-export default function GjortProvider({ children }: { children: ReactNode }) {
+// `todayKeys` (optional) = keys of the items on the I dag list; when the last one
+// is done, a bigger party fires.
+export default function GjortProvider({ children, todayKeys }: { children: ReactNode; todayKeys?: string[] }) {
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [undos, setUndos] = useState<Undo[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -52,8 +56,9 @@ export default function GjortProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const gjort = useCallback(
-    (t: Target) => {
+    (t: Target, origin?: Origin) => {
       const key = keyOf(t.kind, t.id);
+      celebrate(origin, listCleared(todayKeys ?? [], hidden, key));
       setError(null);
       setKeyHidden(key, true);
       startTransition(async () => {
@@ -71,7 +76,7 @@ export default function GjortProvider({ children }: { children: ReactNode }) {
         }
       });
     },
-    [setKeyHidden],
+    [setKeyHidden, todayKeys, hidden],
   );
 
   const undo = useCallback(
@@ -125,7 +130,10 @@ export function GjortRow({
 export function GjortButton(t: Target) {
   const { gjort } = useGjort();
   return (
-    <button type="button" className="btn btn-primary whitespace-nowrap" onClick={() => gjort(t)}>
+    <button type="button" className="btn btn-primary whitespace-nowrap" onClick={(e) => {
+        primeAudio();
+        gjort(t, originOf(e.currentTarget));
+      }}>
       Gjort
     </button>
   );
