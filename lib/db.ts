@@ -1,6 +1,6 @@
 import "server-only";
 import { createClient, type Client, type InArgs } from "@libsql/client";
-import { SCHEMA_SQL, runMigrations } from "./schema";
+import { SCHEMA_SQL, HOME_TABLES_SQL, runMigrations } from "./schema";
 import * as neonDb from "./db-neon";
 
 let _client: Client | null = null;
@@ -20,7 +20,7 @@ function client(): Client {
 async function ready(): Promise<void> {
   if (!_ready) {
     _ready = (async () => {
-      await client().executeMultiple(SCHEMA_SQL);
+      await client().executeMultiple(SCHEMA_SQL + HOME_TABLES_SQL);
       await runMigrations(client());
     })();
   }

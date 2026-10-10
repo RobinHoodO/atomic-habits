@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { AuthError } from "next-auth";
 import { signIn, signOut } from "@/lib/auth";
 import { isUniqueViolation } from "@/lib/db-errors";
@@ -14,6 +15,7 @@ import {
   setArchived,
   toggleCompletion,
   unlockBadges,
+  getIdentity,
   assertCanEdit,
   areConnected,
   addStack,
@@ -58,6 +60,21 @@ function buildSchedule(fd: FormData): string {
   const days = fd.getAll("day").map((d) => Number(d)).filter((n) => n >= 0 && n <= 6);
   return days.length === 0 || days.length === 7 ? "daily" : JSON.stringify(days);
 }
+// identity_id comes from a form field — only keep it if it is one of the user's own identities.
+async function withOwnedIdentity(input: HabitInput, userId: number): Promise<HabitInput> {
+  const id = input.identity_id;
+  if (id == null) return input;
+  if (!Number.isInteger(id) || !(await getIdentity(id, userId))) return { ...input, identity_id: null };
+  return input;
+}
+// Closed signup: ALLOWED_SIGNUP_EMAILS (comma list); unset/empty = open.
+function signupAllowed(email: string): boolean {
+  const list = (process.env.ALLOWED_SIGNUP_EMAILS ?? "")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+  return list.length === 0 || list.includes(email.toLowerCase());
+}
 function parseHabitInput(fd: FormData): HabitInput {
   const identity = str(fd, "identity_id");
   return {
@@ -82,6 +99,7 @@ export async function registerAction(fd: FormData) {
   const email = reqStr(fd, "email").toLowerCase();
   const name = reqStr(fd, "name");
   const password = reqStr(fd, "password");
+  if (!signupAllowed(email)) redirect("/register?error=closed");
   if (password.length < 8) redirect("/register?error=short");
 
   let createUserError: unknown;
@@ -145,7 +163,7 @@ export async function createIdentityAction(fd: FormData) {
 
 export async function createHabitAction(fd: FormData) {
   const user = await requireUser();
-  const id = await createHabit(user.id, parseHabitInput(fd));
+  const id = await createHabit(user.id, await withOwnedIdentity(parseHabitInput(fd), user.id));
   revalidatePath("/");
   revalidatePath("/habits");
   redirect(`/habits/${id}`);
@@ -154,7 +172,7 @@ export async function createHabitAction(fd: FormData) {
 export async function updateHabitAction(fd: FormData) {
   const user = await requireUser();
   const id = num(fd, "id");
-  await updateHabit(id, user.id, parseHabitInput(fd));
+  await updateHabit(id, user.id, await withOwnedIdentity(parseHabitInput(fd), user.id));
   revalidatePath("/");
   revalidatePath("/habits");
   redirect(`/habits/${id}`);
@@ -176,7 +194,13 @@ export async function toggleCompletionAction(fd: FormData) {
   const raw = str(fd, "date");
   const date = raw && /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : todayStr();
   await toggleCompletion(habitId, user.id, date, str(fd, "is_gateway") === "1");
-  await unlockBadges(user.id);
+  after(async () => {
+    try {
+      await unlockBadges(user.id);
+    } catch (error) {
+      console.error("unlockBadges failed", error);
+    }
+  });
   revalidatePath("/");
   revalidatePath(`/habits/${habitId}`);
   revalidatePath("/progress");
@@ -197,7 +221,7 @@ export async function addStackAction(fd: FormData) {
 export async function removeStackAction(fd: FormData) {
   const user = await requireUser();
   await assertCanEdit(num(fd, "from"), user.id);
-  await removeStack(num(fd, "id"));
+  await removeStack(num(fd, "id"), num(fd, "from"));
   revalidatePath(`/habits/${num(fd, "from")}`);
 }
 
@@ -215,7 +239,7 @@ export async function removeBundleAction(fd: FormData) {
   const user = await requireUser();
   const habitId = num(fd, "habit_id");
   await assertCanEdit(habitId, user.id);
-  await removeBundle(num(fd, "id"));
+  await removeBundle(num(fd, "id"), habitId);
   revalidatePath(`/habits/${habitId}`);
 }
 
@@ -232,7 +256,7 @@ export async function removeEnvItemAction(fd: FormData) {
   const user = await requireUser();
   const habitId = num(fd, "habit_id");
   await assertCanEdit(habitId, user.id);
-  await removeEnvItem(num(fd, "id"));
+  await removeEnvItem(num(fd, "id"), habitId);
   revalidatePath(`/habits/${habitId}`);
 }
 
@@ -301,7 +325,7 @@ export async function addPartnerAction(fd: FormData) {
 
 export async function createChallengeAction(fd: FormData) {
   const user = await requireUser();
-  await createChallenge(user.id, num(fd, "to_user_id"), num(fd, "days"));
+  await createChallenge(user.id, num(fd, "to_user_id"), Math.min(365, Math.max(1, Math.floor(num(fd, "days")))));
   revalidatePath("/challenges");
   redirect("/challenges");
 }
@@ -315,7 +339,9 @@ export async function respondChallengeAction(fd: FormData) {
 export async function useFreezeAction(fd: FormData) {
   const user = await requireUser();
   const habitId = num(fd, "habit_id");
-  await spendFreeze(habitId, user.id, reqStr(fd, "date"));
+  const rawDate = str(fd, "date");
+  const date = rawDate && /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : todayStr();
+  await spendFreeze(habitId, user.id, date);
   revalidatePath("/");
   revalidatePath(`/habits/${habitId}`);
   revalidatePath("/progress");

@@ -15,5 +15,14 @@
   ],
   "observability": {
     "enabled": true
+  },
+  // Run next to Neon (Frankfurt): every page makes many DB round trips.
+  // Brute-force guard for sign-in (lib/auth.ts), keyed by email.
+  "ratelimits": [
+    { "name": "AUTH_LIMITER", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } }
+  ],
+  "placement": {
+    "mode": "targeted",
+    "region": "aws:eu-central-1"
   }
 }

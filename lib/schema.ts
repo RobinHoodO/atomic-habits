@@ -184,6 +184,55 @@ CREATE TABLE IF NOT EXISTS home_tasks (
 );
 `;
 
+// Premier: prizes the couple sets, bought with Home points.
+export const HOME_TABLES_SQL = `
+CREATE TABLE IF NOT EXISTS home_rewards (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  home_id    INTEGER NOT NULL REFERENCES homes(id) ON DELETE CASCADE,
+  title      TEXT NOT NULL,
+  cost       INTEGER NOT NULL,
+  active     INTEGER NOT NULL DEFAULT 1
+);
+CREATE TABLE IF NOT EXISTS home_redemptions (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  home_id    INTEGER NOT NULL REFERENCES homes(id) ON DELETE CASCADE,
+  reward_id  INTEGER NOT NULL REFERENCES home_rewards(id) ON DELETE CASCADE,
+  title      TEXT NOT NULL,
+  cost       INTEGER NOT NULL,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  given_at   TEXT
+);
+-- Varsler: what one person did that the other should see.
+CREATE TABLE IF NOT EXISTS home_events (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  home_id        INTEGER NOT NULL REFERENCES homes(id) ON DELETE CASCADE,
+  actor_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind           TEXT NOT NULL,
+  title          TEXT NOT NULL,
+  target_user_id INTEGER,
+  ref_kind       TEXT,
+  ref_id         INTEGER,
+  created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+`;
+
+// Home Today (map "Home: a shared habit space"): repeat rules, stored next
+// due date, Gi bort, Undo snapshot, Task day + owner. Shared by both backends.
+export const HOME_COLUMNS: [table: string, column: string][] = [
+  ["chores", "every_days INTEGER"],
+  ["chores", "weekdays TEXT"],
+  ["chores", "every_weeks INTEGER"],
+  ["chores", "next_due TEXT"],
+  ["chores", "given_to INTEGER"],
+  ["chore_logs", "prev_due TEXT"],
+  ["chore_logs", "prev_given_to INTEGER"],
+  ["home_tasks", "due_on TEXT"],
+  ["home_tasks", "owner_user_id INTEGER"],
+  ["home_members", "seen_at TEXT"],
+  ["chores", "created_by INTEGER"],
+];
+
 // First real migration: the DB already holds data, so new COLUMNS need ALTER
 // (CREATE IF NOT EXISTS above covers new TABLES). Each step is idempotent —
 // a duplicate-column error just means it's already applied. ponytail: a guarded
@@ -192,6 +241,7 @@ export async function runMigrations(db: import("@libsql/client").Client): Promis
   const steps = [
     "ALTER TABLE contracts ADD COLUMN partner_user_id INTEGER REFERENCES users(id)",
     "ALTER TABLE chores ADD COLUMN standard TEXT",
+    ...HOME_COLUMNS.map(([t, c]) => `ALTER TABLE ${t} ADD COLUMN ${c}`),
   ];
   for (const sql of steps) {
     try {

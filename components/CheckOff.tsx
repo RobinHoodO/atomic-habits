@@ -1,4 +1,5 @@
 import { toggleCompletionAction } from "@/app/actions";
+import CelebrateButton from "@/components/CelebrateButton";
 import type { HabitType } from "@/lib/habits";
 
 // Plain server-action forms — progressive enhancement, no client JS.
@@ -23,9 +24,13 @@ export default function CheckOff({
       <form action={toggleCompletionAction}>
         <input type="hidden" name="habit_id" value={habitId} />
         <input type="hidden" name="date" value={date} />
-        <button type="submit" className={`btn ${done ? "" : "btn-primary"}`}>
-          {done ? `${doneLabel} — undo` : todoLabel}
-        </button>
+        {done ? (
+          <button type="submit" className="btn">
+            {`${doneLabel} — undo`}
+          </button>
+        ) : (
+          <CelebrateButton className="btn btn-primary">{todoLabel}</CelebrateButton>
+        )}
       </form>
 
       {!done && gatewayText && (

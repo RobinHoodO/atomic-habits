@@ -9,6 +9,7 @@ export const dynamic = "force-dynamic";
 const ERRORS: Record<string, string> = {
   exists: "An account with that email already exists.",
   short: "Password must be at least 8 characters.",
+  closed: "Registrering er stengt. Spør Robin om en invitasjon.",
   server: "Something went wrong. Please try again.",
 };
 

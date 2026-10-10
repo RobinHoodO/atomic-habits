@@ -2,7 +2,7 @@
 // friendly offline page. Data is always fetched fresh from the network (the app
 // is server-rendered against SQLite), so we deliberately do NOT cache dynamic
 // responses — only the offline fallback.
-const CACHE = "ah-v1";
+const CACHE = "ah-v2";
 const OFFLINE = "/offline.html";
 
 self.addEventListener("install", (event) => {
@@ -24,6 +24,12 @@ self.addEventListener("fetch", (event) => {
   if (req.method !== "GET") return;
   // Network-first for page navigations; fall back to the offline page if down.
   if (req.mode === "navigate") {
-    event.respondWith(fetch(req).catch(() => caches.match(OFFLINE)));
+    // Re-wrap the cached page: Cloudflare redirects /offline.html → /offline, and a
+    // browser refuses a redirected response for a navigation.
+    event.respondWith(
+      fetch(req).catch(() =>
+        caches.match(OFFLINE).then((r) => r && new Response(r.body, { headers: r.headers })),
+      ),
+    );
   }
 });

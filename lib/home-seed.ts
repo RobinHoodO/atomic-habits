@@ -1,7 +1,7 @@
 import "server-only";
 import { dbBatch } from "./db";
 import { assertHomeMember, listChores } from "./home";
-import { cadencePoints, type Cadence } from "./home-cadence";
+import { cadencePoints, firstDue, type Cadence } from "./home-cadence";
 
 type Seed = { title: string; area: string; cadence: Cadence; note?: string; rotating?: boolean };
 
@@ -54,16 +54,20 @@ const STARTER: Seed[] = [
   { title: "Holde orden i hjørneskap (kjeler og diverse)", area: "Kjøkken", cadence: "seasonal" },
 ];
 
+// All 37 start as Felles (no owner); "Planlegge ukens middager" stays Bytter på.
 // Insert the starter set, but only if the home has no chores yet (idempotent).
 export async function seedStarter(homeId: number, userId: number): Promise<number> {
   await assertHomeMember(homeId, userId);
   if ((await listChores(homeId)).length > 0) return 0;
-  const sql = `INSERT INTO chores (home_id, title, area, cadence, points, rotating, conditional_note)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`;
+  const sql = `INSERT INTO chores (home_id, title, area, cadence, points, rotating, conditional_note, next_due)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
   await dbBatch(
     STARTER.map((r) => ({
       sql,
-      args: [homeId, r.title, r.area, r.cadence, cadencePoints(r.cadence), r.rotating ? 1 : 0, r.note ?? null],
+      args: [
+        homeId, r.title, r.area, r.cadence, cadencePoints(r.cadence), r.rotating ? 1 : 0, r.note ?? null,
+        firstDue({ cadence: r.cadence, every_days: null, weekdays: null, every_weeks: null }),
+      ],
     })),
   );
   return STARTER.length;
