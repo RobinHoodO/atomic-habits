@@ -150,3 +150,13 @@ h1 { line-height: 1.15; }
 
   .req::after { content: " *"; color: var(--bad); }
 }
+
+/* A just-saved Routine card: a green ring that fades out once (~2 s). No JS. */
+@keyframes saved-flash {
+  0%, 60% { box-shadow: 0 0 0 3px var(--good); }
+  100% { box-shadow: 0 0 0 3px transparent; }
+}
+.saved-flash { animation: saved-flash 2s ease-out 1; }
+@media (prefers-reduced-motion: reduce) {
+  .saved-flash { animation: none; box-shadow: 0 0 0 3px var(--good); }
+}

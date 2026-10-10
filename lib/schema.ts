@@ -203,6 +203,18 @@ CREATE TABLE IF NOT EXISTS home_redemptions (
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   given_at   TEXT
 );
+-- Varsler: what one person did that the other should see.
+CREATE TABLE IF NOT EXISTS home_events (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  home_id        INTEGER NOT NULL REFERENCES homes(id) ON DELETE CASCADE,
+  actor_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind           TEXT NOT NULL,
+  title          TEXT NOT NULL,
+  target_user_id INTEGER,
+  ref_kind       TEXT,
+  ref_id         INTEGER,
+  created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);
 `;
 
 // Home Today (map "Home: a shared habit space"): repeat rules, stored next
@@ -217,6 +229,8 @@ export const HOME_COLUMNS: [table: string, column: string][] = [
   ["chore_logs", "prev_given_to INTEGER"],
   ["home_tasks", "due_on TEXT"],
   ["home_tasks", "owner_user_id INTEGER"],
+  ["home_members", "seen_at TEXT"],
+  ["chores", "created_by INTEGER"],
 ];
 
 // First real migration: the DB already holds data, so new COLUMNS need ALTER

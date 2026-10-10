@@ -7,6 +7,7 @@ import {
   lastDoneByChore,
   effectiveDue,
   pointsByMember,
+  getSeenAt,
   type Chore,
   type HomeMember,
 } from "@/lib/home";
@@ -21,6 +22,10 @@ import {
 } from "@/lib/home-cadence";
 import { todayStr, addDays } from "@/lib/score";
 import FairnessBar from "@/components/FairnessBar";
+import WhoFilter from "@/components/WhoFilter";
+import NyPill, { NY_RING } from "@/components/NyPill";
+import { unreadThreshold, isFresh } from "@/lib/home-events";
+import { parseWho, matchesWho } from "@/lib/home-who";
 import {
   addChoreAction,
   updateChoreAction,
@@ -157,15 +162,26 @@ const DOT: Record<DueState, string> = {
   none: "bg-border",
 };
 
-export default async function ChoresPage({ searchParams }: { searchParams: Promise<{ invite?: string }> }) {
+export default async function ChoresPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ invite?: string; saved?: string; who?: string }>;
+}) {
   const user = await requireUser();
-  const { invite } = await searchParams;
+  const { invite, saved, who: whoRaw } = await searchParams;
   const home = await homeForUser(user.id);
   if (!home) redirect("/home");
 
   const members = await homeMembers(home.id);
   const nameOf = new Map(members.map((m) => [Number(m.user_id), m.name]));
-  const chores = await listChores(home.id);
+  const who = parseWho(whoRaw, members.map((m) => Number(m.user_id)), user.id, true);
+  const threshold = unreadThreshold(await getSeenAt(home.id, user.id));
+  const allChores = await listChores(home.id);
+  const chores = allChores.filter((c) =>
+    matchesWho(who, c.assignee_user_id == null ? null : Number(c.assignee_user_id), !!c.rotating, user.id),
+  );
+  const savedId = saved && /^\d+$/.test(saved) ? Number(saved) : null; // only an integer id is trusted
+  const savedChore = savedId != null ? allChores.find((c) => c.id === savedId) : undefined;
   const lastDone = await lastDoneByChore(home.id);
   const today = todayStr();
   const pts30 = await pointsByMember(home.id, addDays(today, -29));
@@ -183,17 +199,29 @@ export default async function ChoresPage({ searchParams }: { searchParams: Promi
 
   function ChoreItem(c: Chore) {
     const d = dueState(effectiveDue(c, lastDone[c.id] ?? null), today);
+    const isNew = isFresh(c.created_by, c.created_at, user.id, threshold);
     const owner = c.rotating
       ? "Bytter på"
       : c.assignee_user_id != null
         ? nameOf.get(Number(c.assignee_user_id))
         : c.conditional_note || "Felles";
     return (
-      <details key={c.id} id={`c${c.id}`} className="card group/item p-0">
+      <details
+        key={c.id}
+        id={`c${c.id}`}
+        className={`card group/item p-0 ${c.id === savedChore?.id ? "saved-flash" : isNew ? NY_RING : ""}`}
+      >
         <summary className="flex cursor-pointer list-none items-center gap-3 p-3 [&::-webkit-details-marker]:hidden">
           <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${DOT[d.state]}`} title={d.state} />
           <span className="min-w-0 flex-1">
-            <span className="block truncate font-medium">{c.title}</span>
+            <span className="block truncate font-medium">
+              {c.title}
+              {isNew && (
+                <span className="ml-2 align-middle">
+                  <NyPill />
+                </span>
+              )}
+            </span>
             <span className="text-xs text-muted">
               {owner}
               {d.state === "overdue" && <span className="text-bad"> · på overtid</span>}
@@ -229,6 +257,12 @@ export default async function ChoresPage({ searchParams }: { searchParams: Promi
         </div>
       </header>
 
+      {savedChore && (
+        <div role="status" className="card border-good py-2 text-sm text-good">
+          Lagret ✓ «{savedChore.title}»
+        </div>
+      )}
+
       {members.length < 2 && (
         <section className="card flex flex-col gap-2">
           <h2 className="text-sm font-semibold">Inviter partneren din</h2>
@@ -244,7 +278,7 @@ export default async function ChoresPage({ searchParams }: { searchParams: Promi
         </section>
       )}
 
-      <details id="ny" className="card" open={chores.length > 0 ? undefined : true}>
+      <details id="ny" className="card" open={allChores.length > 0 ? undefined : true}>
         <summary className="cursor-pointer list-none font-medium">+ Ny rutine</summary>
         <form action={addChoreAction} className="mt-3 flex flex-col gap-3">
           <Fields members={members} me={user.id} />
@@ -252,7 +286,9 @@ export default async function ChoresPage({ searchParams }: { searchParams: Promi
         </form>
       </details>
 
-      {chores.length === 0 && (
+      {allChores.length > 0 && <WhoFilter path="/home/chores" members={members} me={user.id} current={who} withTurns />}
+
+      {allChores.length === 0 && (
         <div className="card flex flex-col items-start gap-3 text-sm text-muted">
           <span>Ingen rutiner ennå. Last inn listen fra «Vårt hjem».</span>
           <form action={seedStarterAction}>

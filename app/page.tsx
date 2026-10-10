@@ -14,8 +14,11 @@ import {
   listTasks,
   listRedemptions,
   walletByMember,
+  getSeenAt,
+  unreadHomeEvents,
   FELLES_BONUS,
 } from "@/lib/home";
+import { unreadThreshold, isFresh, eventText } from "@/lib/home-events";
 import { isWeekend, taskIsStale } from "@/lib/home-cadence";
 import { buildToday, type Item } from "@/lib/home-today";
 import { toggleCompletionAction } from "@/app/actions";
@@ -23,6 +26,7 @@ import { addTaskAction, markGivenAction } from "@/app/home-actions";
 import GameStrip from "@/components/GameStrip";
 import DayPicker from "@/components/DayPicker";
 import TodayRow from "@/components/TodayRow";
+import OwnerPills from "@/components/OwnerPills";
 import GjortProvider, { UndoBars } from "@/components/GjortProvider";
 
 export const dynamic = "force-dynamic";
@@ -50,7 +54,7 @@ export default async function TodayPage({
   if (habits.length === 0 && identities.length === 0 && !home) redirect("/onboarding");
 
   // ---- habits + home data, loaded together ----
-  const [statsMap, members, chores, lastDone, lastDoer, allTasks, redemptions] = await Promise.all([
+  const [statsMap, members, chores, lastDone, lastDoer, allTasks, redemptions, seenAt] = await Promise.all([
     statsForMany(habits, user.id, today),
     home ? homeMembers(home.id) : Promise.resolve([]),
     home ? listChores(home.id) : Promise.resolve([]),
@@ -58,7 +62,18 @@ export default async function TodayPage({
     home ? lastDoerByChore(home.id) : Promise.resolve({} as Record<number, number>),
     home ? listTasks(home.id) : Promise.resolve([]),
     home ? listRedemptions(home.id) : Promise.resolve([]),
+    home ? getSeenAt(home.id, user.id) : Promise.resolve(null),
   ]);
+  // Varsler: unread events by the partner; "Ny" = their items created since I last looked.
+  const threshold = unreadThreshold(seenAt);
+  const unread = home ? await unreadHomeEvents(home.id, user.id, seenAt) : [];
+  const givenToMe = unread.filter((e) => Number(e.target_user_id) === user.id);
+  const newRoutine = new Set(
+    chores.filter((c) => isFresh(c.created_by, c.created_at, user.id, threshold)).map((c) => c.id),
+  );
+  const newTask = new Set(
+    allTasks.filter((x) => isFresh(x.created_by, x.created_at, user.id, threshold)).map((x) => x.id),
+  );
   const ids = members.map((m) => Number(m.user_id)).sort((a, b) => a - b);
   const wallet = home ? await walletByMember(home.id, ids) : {};
 
@@ -128,6 +143,7 @@ export default async function TodayPage({
         dim={dim}
         giveTo={i.kind === "routine" && i.owner === user.id && partner ? partner.name : null}
         date={today}
+        isNew={(i.kind === "task" ? newTask : newRoutine).has(i.id)}
       />
     );
   }
@@ -159,10 +175,29 @@ export default async function TodayPage({
             {new Date(today + "T00:00:00").toLocaleDateString("nb-NO", { weekday: "long", day: "numeric", month: "long" })}
           </p>
         </div>
-        {home && <Link href="/home/premier" className="btn text-sm">🎁 {wallet[user.id] ?? 0} p</Link>}
+        {home && (
+          <div className="flex items-center gap-2">
+            <Link href="/home/varsler" className="btn relative text-sm" aria-label={`Varsler${unread.length ? ` (${unread.length} nye)` : ""}`}>
+              🔔
+              {unread.length > 0 && (
+                <span className="ml-1 rounded-full bg-accent px-1.5 text-xs font-semibold text-white">{unread.length}</span>
+              )}
+            </Link>
+            <Link href="/home/premier" className="btn text-sm">🎁 {wallet[user.id] ?? 0} p</Link>
+          </div>
+        )}
       </header>
 
       <UndoBars />
+      {givenToMe.map((e) => (
+        <Link
+          key={e.id}
+          href="/home/varsler"
+          className="card py-2 text-sm ring-2 ring-accent/40 hover:bg-surface-2"
+        >
+          {e.kind === "chore_given" ? "🎁" : "👉"} {eventText(e, nameOf.get(Number(e.actor_id)) ?? "Partneren", user.id)}
+        </Link>
+      ))}
       {toGive.map((d) => (
         <form key={d.id} action={markGivenAction} className="card flex items-center justify-between gap-3 py-2 text-sm">
           <input type="hidden" name="id" value={d.id} />
@@ -181,6 +216,7 @@ export default async function TodayPage({
             <button className="btn btn-primary">Legg til</button>
           </div>
           <DayPicker first="today" withLater />
+          <OwnerPills members={members} me={user.id} />
         </form>
       ) : (
         <Link href="/home" className="card text-sm text-muted hover:text-foreground">

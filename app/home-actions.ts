@@ -167,17 +167,20 @@ export async function addMemberAction(fd: FormData) {
 export async function addChoreAction(fd: FormData) {
   const user = await requireUser();
   const homeId = await requireHomeId(user.id);
-  await addChore(homeId, user.id, await parseChore(fd, homeId, user.id));
+  const id = await addChore(homeId, user.id, await parseChore(fd, homeId, user.id));
   revalidatePath("/home");
   revalidatePath("/home/chores");
+  redirect(`/home/chores?saved=${id}#c${id}`); // lands on the closed card with a "Lagret" bar
 }
 
 export async function updateChoreAction(fd: FormData) {
   const user = await requireUser();
   const homeId = await requireHomeId(user.id);
-  await updateChore(int(fd, "id"), user.id, await parseChore(fd, homeId, user.id));
+  const id = int(fd, "id");
+  await updateChore(id, user.id, await parseChore(fd, homeId, user.id));
   revalidatePath("/home");
   revalidatePath("/home/chores");
+  redirect(`/home/chores?saved=${id}#c${id}`);
 }
 
 export async function deleteChoreAction(fd: FormData) {

@@ -93,4 +93,18 @@ assert.equal(db.prepare(cas).run("2026-06-28", trash, "2026-06-21").changes, 1, 
 assert.equal(db.prepare(cas).run("2026-07-05", trash, "2026-06-21").changes, 0, "second tap sees the round already moved");
 assert.equal(db.prepare(cas).run("2026-06-30", floor, "").changes, 1, "a row with no stored date matches ''");
 
+// --- Varsler: unread = other person's events after seen_at (mirrors unreadHomeEvents) ---
+const ev = `INSERT INTO home_events (home_id,actor_id,kind,title,target_user_id,ref_kind,ref_id,created_at) VALUES (?,?,?,?,?,?,?,?)`;
+db.prepare(ev).run(home, u2, "chore_given", "Søppel", u1, "routine", trash, "2026-10-10 10:00:00");
+db.prepare(ev).run(home, u1, "chore_added", "Gulv", null, "routine", floor, "2026-10-10 10:05:00");
+db.prepare(ev).run(home, u2, "task_added", "Gammel", null, "task", null, "2026-10-01 10:00:00");
+const unreadSql = `SELECT * FROM home_events WHERE home_id = ? AND actor_id != ? AND created_at > ? ORDER BY id DESC LIMIT 50`;
+assert.equal(db.prepare(unreadSql).all(home, u1, "2026-09-26 12:00:00").length, 2, "never seen: partner's events, 14 days");
+db.prepare("UPDATE home_members SET seen_at = datetime('now') WHERE home_id = ? AND user_id = ?").run(home, u1);
+const seen = (db.prepare("SELECT seen_at FROM home_members WHERE home_id = ? AND user_id = ?").get(home, u1) as { seen_at: string }).seen_at;
+assert.ok(seen && /^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/.test(seen), "seen_at has the same shape as created_at");
+assert.equal(db.prepare(unreadSql).all(home, u1, seen).length, 0, "after seeing, nothing is unread");
+const choreCreator = db.prepare("INSERT INTO chores (home_id,title,created_by) VALUES (?,?,?)").run(home, "Ny", u2).lastInsertRowid;
+assert.ok(choreCreator, "chores.created_by column exists");
+
 console.log("✓ all home SQL checks passed");

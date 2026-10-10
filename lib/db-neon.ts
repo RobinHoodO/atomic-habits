@@ -20,6 +20,7 @@ const ID_TABLES = new Set([
   "home_tasks",
   "home_rewards",
   "home_redemptions",
+  "home_events",
 ]);
 
 let neonFactory = neon;

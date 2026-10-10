@@ -11,6 +11,7 @@ import {
   type Cadence,
   type RuleFields,
 } from "./home-cadence";
+import { unreadThreshold, type EventKind, type HomeEvent } from "./home-events";
 
 // ===== types =====
 export interface Home {
@@ -41,6 +42,7 @@ export interface Chore {
   every_weeks: number | null;
   next_due: string | null;
   given_to: number | null;
+  created_by: number | null; // null for seeded starter Routines
 }
 export interface HomeTask {
   id: number;
@@ -170,11 +172,12 @@ export async function addChore(homeId: number, userId: number, input: ChoreInput
   await assertHomeMember(homeId, userId);
   const info = await dbRun(
     `INSERT INTO chores (home_id, title, area, cadence, points, assignee_user_id, rotating, conditional_note, standard,
-         every_days, weekdays, every_weeks, next_due)
+         every_days, weekdays, every_weeks, next_due, created_by)
          VALUES (@home_id, @title, @area, @cadence, @points, @assignee_user_id, @rotating, @conditional_note, @standard,
-         @every_days, @weekdays, @every_weeks, @next_due)`,
+         @every_days, @weekdays, @every_weeks, @next_due, @created_by)`,
     {
       ...ruleArgs(input, input.next_due ?? firstDue(input)),
+      created_by: userId,
       home_id: homeId,
       title: input.title,
       area: input.area,
@@ -186,7 +189,9 @@ export async function addChore(homeId: number, userId: number, input: ChoreInput
       standard: input.standard,
     },
   );
-  return Number(info.lastInsertRowid);
+  const id = Number(info.lastInsertRowid);
+  await recordHomeEvent(homeId, userId, "chore_added", input.title, { refKind: "routine", refId: id });
+  return id;
 }
 
 export async function updateChore(choreId: number, userId: number, input: ChoreInput): Promise<void> {
@@ -210,6 +215,7 @@ export async function updateChore(choreId: number, userId: number, input: ChoreI
       standard: input.standard,
     },
   );
+  await recordHomeEvent(old.home_id, userId, "chore_changed", input.title, { refKind: "routine", refId: choreId });
 }
 
 export async function deleteChore(choreId: number, userId: number): Promise<void> {
@@ -282,6 +288,11 @@ export async function giveAwayChore(choreId: number, userId: number): Promise<vo
   const other = (await memberIds(c.home_id)).find((id) => id !== userId);
   if (other == null) throw new AuthzError("nobody to give it to");
   await dbRun(`UPDATE chores SET given_to = ? WHERE id = ?`, [other, choreId]);
+  await recordHomeEvent(c.home_id, userId, "chore_given", c.title, {
+    targetUserId: other,
+    refKind: "routine",
+    refId: choreId,
+  });
 }
 
 // Last completion date of one chore.
@@ -365,10 +376,15 @@ export async function addTask(
 ): Promise<void> {
   await assertHomeMember(homeId, userId);
   if (ownerUserId != null) await assertHomeMember(homeId, ownerUserId);
-  await dbRun(
+  const info = await dbRun(
     `INSERT INTO home_tasks (home_id, title, points, created_by, due_on, owner_user_id) VALUES (?, ?, ?, ?, ?, ?)`,
     [homeId, title, points, userId, dueOn, ownerUserId],
   );
+  await recordHomeEvent(homeId, userId, "task_added", title, {
+    targetUserId: ownerUserId != null && ownerUserId !== userId ? ownerUserId : null,
+    refKind: "task",
+    refId: Number(info.lastInsertRowid),
+  });
 }
 
 // Give a Task a day (null = Senere).
@@ -399,6 +415,47 @@ export async function deleteTask(taskId: number, userId: number): Promise<void> 
   if (!t) return;
   await assertHomeMember(t.home_id, userId);
   await dbRun(`DELETE FROM home_tasks WHERE id = ?`, [taskId]);
+}
+
+// ===== Varsler: what one person did that the other should see =====
+export async function recordHomeEvent(
+  homeId: number,
+  actorId: number,
+  kind: EventKind,
+  title: string,
+  opts: { targetUserId?: number | null; refKind?: "routine" | "task"; refId?: number } = {},
+): Promise<void> {
+  await dbRun(
+    `INSERT INTO home_events (home_id, actor_id, kind, title, target_user_id, ref_kind, ref_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [homeId, actorId, kind, title, opts.targetUserId ?? null, opts.refKind ?? null, opts.refId ?? null],
+  );
+}
+
+export async function getSeenAt(homeId: number, userId: number): Promise<string | null> {
+  const r = await dbGet<{ seen_at: string | null }>(
+    `SELECT seen_at FROM home_members WHERE home_id = ? AND user_id = ?`,
+    [homeId, userId],
+  );
+  return r?.seen_at ?? null;
+}
+
+// Events by the other person that this user has not seen yet (newest first).
+export async function unreadHomeEvents(homeId: number, userId: number, seenAt: string | null): Promise<HomeEvent[]> {
+  return dbAll<HomeEvent>(
+    `SELECT * FROM home_events WHERE home_id = ? AND actor_id != ? AND created_at > ? ORDER BY id DESC LIMIT 50`,
+    [homeId, userId, unreadThreshold(seenAt)],
+  );
+}
+
+export async function recentHomeEvents(homeId: number, limit = 30): Promise<HomeEvent[]> {
+  return dbAll<HomeEvent>(`SELECT * FROM home_events WHERE home_id = ? ORDER BY id DESC LIMIT ${Math.floor(limit)}`, [
+    homeId,
+  ]);
+}
+
+export async function markHomeSeen(homeId: number, userId: number): Promise<void> {
+  await dbRun(`UPDATE home_members SET seen_at = datetime('now') WHERE home_id = ? AND user_id = ?`, [homeId, userId]);
 }
 
 // ===== Premier (prizes) =====

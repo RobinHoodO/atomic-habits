@@ -1,6 +1,9 @@
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/session";
-import { homeForUser, homeMembers, listTasks, type HomeTask } from "@/lib/home";
+import { homeForUser, homeMembers, listTasks, getSeenAt, type HomeTask } from "@/lib/home";
+import { unreadThreshold, isFresh } from "@/lib/home-events";
+import { parseWho, matchesWho } from "@/lib/home-who";
+import WhoFilter from "@/components/WhoFilter";
 import { taskIsStale, daysBetween } from "@/lib/home-cadence";
 import { todayStr } from "@/lib/score";
 import { addTaskAction } from "@/app/home-actions";
@@ -14,16 +17,21 @@ const PILL =
   "btn cursor-pointer text-xs has-[:checked]:border-accent has-[:checked]:bg-accent has-[:checked]:text-white";
 
 // Oppgaver: every open Task (the backlog), dated ones first, then Senere.
-export default async function TasksPage() {
+export default async function TasksPage({ searchParams }: { searchParams: Promise<{ who?: string }> }) {
   const user = await requireUser();
+  const { who: whoRaw } = await searchParams;
   const home = await homeForUser(user.id);
   if (!home) redirect("/home");
 
   const today = todayStr();
   const members = await homeMembers(home.id);
   const nameOf = new Map(members.map((m) => [Number(m.user_id), m.name]));
+  const who = parseWho(whoRaw, members.map((m) => Number(m.user_id)), user.id, false);
+  const threshold = unreadThreshold(await getSeenAt(home.id, user.id));
   const tasks = await listTasks(home.id);
-  const open = tasks.filter((t) => !t.done_at);
+  const open = tasks.filter(
+    (t) => !t.done_at && matchesWho(who, t.owner_user_id == null ? null : Number(t.owner_user_id), false, user.id),
+  );
   const dated = open.filter((t) => t.due_on).sort((a, b) => a.due_on!.localeCompare(b.due_on!));
   const later = open.filter((t) => !t.due_on);
   const done = tasks.filter((t) => t.done_at).sort((a, b) => b.done_at!.localeCompare(a.done_at!)).slice(0, 20);
@@ -53,6 +61,7 @@ export default async function TasksPage() {
         late={late > 0 || stale}
         meta={[owner(t), `+${t.points} p`]}
         date={today}
+        isNew={isFresh(t.created_by, t.created_at, user.id, threshold)}
       />
     );
   }
@@ -89,6 +98,8 @@ export default async function TasksPage() {
           </label>
         </div>
       </form>
+
+      <WhoFilter path="/home/tasks" members={members} me={user.id} current={who} />
 
       {open.length === 0 && <p className="text-sm text-muted">Tomt. Ingenting venter 🎉</p>}
 

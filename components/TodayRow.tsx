@@ -1,5 +1,6 @@
 import Link from "next/link";
 import DayPicker from "@/components/DayPicker";
+import NyPill, { NY_RING } from "@/components/NyPill";
 import { GjortRow, GjortButton } from "@/components/GjortProvider";
 import {
   skipChoreAction,
@@ -24,6 +25,7 @@ export default function TodayRow({
   dim,
   giveTo,
   date,
+  isNew,
 }: {
   kind: RowKind;
   id: number;
@@ -34,14 +36,24 @@ export default function TodayRow({
   dim?: boolean;
   giveTo?: string | null; // partner name when Gi bort is allowed
   date: string; // today, for habit check-ins
+  isNew?: boolean; // added by the other person since I last looked at Varsler
 }) {
   return (
-    <GjortRow kind={kind} id={id} className={`card flex flex-col gap-2 py-3 ${dim ? "opacity-70" : ""}`}>
+    <GjortRow
+      kind={kind}
+      id={id}
+      className={`card flex flex-col gap-2 py-3 ${dim ? "opacity-70" : ""} ${isNew ? NY_RING : ""}`}
+    >
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="truncate font-medium tracking-tight">
             <span aria-hidden className="mr-1.5">{ICON[kind]}</span>
             {kind === "habit" ? <Link href={`/habits/${id}`} className="hover:underline">{title}</Link> : title}
+            {isNew && (
+              <span className="ml-2 align-middle">
+                <NyPill />
+              </span>
+            )}
           </div>
           <div className="mt-0.5 flex flex-wrap gap-x-2 text-xs text-muted">
             {when && <span className={late ? "font-medium text-bad" : ""}>{when}</span>}

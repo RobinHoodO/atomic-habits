@@ -9,7 +9,7 @@
     "cf:build": "opennextjs-cloudflare build",
     "cf:deploy": "opennextjs-cloudflare build && wrangler deploy",
     "cf:preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
-    "test": "tsx lib/score.test.ts && tsx lib/home-cadence.test.ts && tsx lib/home-today.test.ts && tsx lib/home-sql.test.ts && tsx lib/db-neon.test.ts && tsx lib/db-errors.test.ts && tsx lib/habit-stats.test.ts"
+    "test": "tsx lib/score.test.ts && tsx lib/home-cadence.test.ts && tsx lib/home-today.test.ts && tsx lib/home-sql.test.ts && tsx lib/home-events.test.ts && tsx lib/db-neon.test.ts && tsx lib/db-errors.test.ts && tsx lib/habit-stats.test.ts"
   },
   "dependencies": {
     "@elevenlabs/react": "^1.7.0",

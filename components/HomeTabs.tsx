@@ -7,10 +7,11 @@ const TABS = [
   { href: "/home/chores", label: "Rutiner" },
   { href: "/home/tasks", label: "Oppgaver" },
   { href: "/home/premier", label: "Premier" },
+  { href: "/home/varsler", label: "Varsler" },
 ];
 
 // Tabs across the Hjem section. Hidden on /home itself (the make-a-home form).
-export default function HomeTabs() {
+export default function HomeTabs({ unread = 0 }: { unread?: number }) {
   const pathname = usePathname();
   if (pathname === "/home") return null;
   return (
@@ -27,6 +28,9 @@ export default function HomeTabs() {
             }`}
           >
             {t.label}
+            {t.href === "/home/varsler" && unread > 0 && !active && (
+              <span className="ml-1 rounded-full bg-accent px-1.5 text-xs font-semibold text-white">{unread}</span>
+            )}
           </Link>
         );
       })}
