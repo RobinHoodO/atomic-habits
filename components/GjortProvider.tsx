@@ -130,7 +130,7 @@ export function GjortRow({
 export function GjortButton(t: Target) {
   const { gjort } = useGjort();
   return (
-    <button type="button" className="btn btn-primary whitespace-nowrap" onClick={(e) => {
+    <button type="button" className="btn btn-primary h-10 whitespace-nowrap px-3.5" onClick={(e) => {
         primeAudio();
         gjort(t, originOf(e.currentTarget));
       }}>
@@ -144,14 +144,14 @@ export function UndoBars() {
   return (
     <>
       {error && (
-        <p role="alert" className="card py-2 text-sm text-bad">
+        <p role="alert" className="card px-3 py-1.5 text-sm text-bad shadow-none">
           {error}
         </p>
       )}
       {undos.map((u) => (
-        <div key={u.key} className="card flex items-center justify-between gap-3 py-2 text-sm">
+        <div key={u.key} className="card flex items-center justify-between gap-2 px-3 py-1.5 text-sm shadow-none">
           <span className="min-w-0 truncate">✓ «{u.title}» gjort</span>
-          <button type="button" className="btn" onClick={() => undo(u)}>
+          <button type="button" className="btn h-10 px-3" onClick={() => undo(u)}>
             Angre
           </button>
         </div>

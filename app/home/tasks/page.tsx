@@ -14,7 +14,7 @@ import GjortProvider, { UndoBars } from "@/components/GjortProvider";
 export const dynamic = "force-dynamic";
 
 const PILL =
-  "btn cursor-pointer text-xs has-[:checked]:border-accent has-[:checked]:bg-accent has-[:checked]:text-white";
+  "btn cursor-pointer px-2 py-1.5 text-xs shadow-none has-[:checked]:border-accent has-[:checked]:bg-accent has-[:checked]:text-white";
 
 // Oppgaver: every open Task (the backlog), dated ones first, then Senere.
 export default async function TasksPage({ searchParams }: { searchParams: Promise<{ who?: string }> }) {
@@ -68,18 +68,19 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
 
   return (
     <GjortProvider>
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-2">
       <UndoBars />
 
-      <form action={addTaskAction} className="card flex flex-col gap-2 text-sm">
+      <form action={addTaskAction} className="group card flex flex-col gap-1.5 rounded-xl px-2 py-2 text-sm shadow-none">
         <input type="hidden" name="back" value="/home/tasks" />
-        <div className="flex gap-2">
-          <input className="input flex-1" name="title" placeholder="Ny oppgave…" required />
-          <input className="input w-16" type="number" name="points" min={0} defaultValue={5} aria-label="Poeng" title="Poeng" />
-          <button className="btn btn-primary">Legg til</button>
+        <div className="flex gap-1.5">
+          <input className="input h-10 min-w-0 flex-1 py-1" name="title" placeholder="Ny oppgave…" aria-label="Ny oppgave" required />
+          <input className="input h-10 w-14 px-2 py-1" type="number" name="points" min={0} defaultValue={5} aria-label="Poeng" title="Poeng" />
+          <button className="btn btn-primary h-10 w-10 px-0 text-lg" aria-label="Legg til" title="Legg til">+</button>
         </div>
+        <div className="hidden flex-col gap-1 group-focus-within:flex">
         <DayPicker first="today" withLater />
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap gap-1">
           <label className={PILL}>
             <input type="radio" name="owner" value="me" defaultChecked className="sr-only" />
             Meg
@@ -97,6 +98,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
             Felles
           </label>
         </div>
+        </div>
       </form>
 
       <WhoFilter path="/home/tasks" members={members} me={user.id} current={who} />
@@ -104,15 +106,15 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
       {open.length === 0 && <p className="text-sm text-muted">Tomt. Ingenting venter 🎉</p>}
 
       {dated.length > 0 && (
-        <section className="flex flex-col gap-2">
+        <section className="flex flex-col gap-1">
           <h2 className="text-xs font-semibold uppercase tracking-wide text-muted">Med dag</h2>
-          <ul className="flex flex-col gap-2">{dated.map((t) => <Row key={t.id} t={t} />)}</ul>
+          <ul className="flex flex-col gap-1.5">{dated.map((t) => <Row key={t.id} t={t} />)}</ul>
         </section>
       )}
       {later.length > 0 && (
-        <section className="flex flex-col gap-2">
+        <section className="flex flex-col gap-1">
           <h2 className="text-xs font-semibold uppercase tracking-wide text-muted">Senere</h2>
-          <ul className="flex flex-col gap-2">{later.map((t) => <Row key={t.id} t={t} />)}</ul>
+          <ul className="flex flex-col gap-1.5">{later.map((t) => <Row key={t.id} t={t} />)}</ul>
         </section>
       )}
 
@@ -121,7 +123,7 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
           <summary className="cursor-pointer list-none text-xs font-semibold uppercase tracking-wide text-muted">
             ▸ Ferdig ({done.length})
           </summary>
-          <ul className="mt-2 flex flex-col gap-1 text-sm">
+          <ul className="mt-1 flex flex-col gap-0.5 text-sm">
             {done.map((t) => (
               <li key={t.id} className="flex items-center justify-between gap-3 px-1 text-muted">
                 <span className="truncate line-through">{t.title}</span>

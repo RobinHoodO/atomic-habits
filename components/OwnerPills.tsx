@@ -1,10 +1,10 @@
 const PILL =
-  "btn cursor-pointer text-xs has-[:checked]:border-accent has-[:checked]:bg-accent has-[:checked]:text-white";
+  "btn cursor-pointer px-2 py-1.5 text-xs shadow-none has-[:checked]:border-accent has-[:checked]:bg-accent has-[:checked]:text-white";
 
 // Who a new Task is for: Meg (default) / the partner / Felles. Posts as field "owner".
 export default function OwnerPills({ members, me }: { members: { user_id: number; name: string }[]; me: number }) {
   return (
-    <div className="flex flex-wrap gap-1.5">
+    <div className="flex flex-wrap gap-1">
       <label className={PILL}>
         <input type="radio" name="owner" value="me" defaultChecked className="sr-only" />
         Meg

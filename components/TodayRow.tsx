@@ -42,11 +42,11 @@ export default function TodayRow({
     <GjortRow
       kind={kind}
       id={id}
-      className={`card flex flex-col gap-2 py-3 ${dim ? "opacity-70" : ""} ${isNew ? NY_RING : ""}`}
+      className={`card relative rounded-xl px-3 py-1.5 shadow-none ${dim ? "opacity-70" : ""} ${isNew ? NY_RING : ""}`}
     >
-      <div className="flex items-center justify-between gap-3">
+      <div className={`flex items-center justify-between gap-2 ${kind !== "habit" ? "pr-9" : ""}`}>
         <div className="min-w-0">
-          <div className="truncate font-medium tracking-tight">
+          <div className="truncate text-[15px] font-medium tracking-tight">
             <span aria-hidden className="mr-1.5">{ICON[kind]}</span>
             {kind === "habit" ? <Link href={`/habits/${id}`} className="hover:underline">{title}</Link> : title}
             {isNew && (
@@ -55,9 +55,9 @@ export default function TodayRow({
               </span>
             )}
           </div>
-          <div className="mt-0.5 flex flex-wrap gap-x-2 text-xs text-muted">
+          <div className="truncate text-xs text-muted">
             {when && <span className={late ? "font-medium text-bad" : ""}>{when}</span>}
-            {meta.map((m) => <span key={m}>{m}</span>)}
+            {meta.map((m, n) => <span key={m}>{n > 0 || when ? " · " : ""}{m}</span>)}
           </div>
         </div>
         <div className="shrink-0">
@@ -66,8 +66,14 @@ export default function TodayRow({
       </div>
       {kind !== "habit" && (
         <details className="text-xs">
-          <summary className="cursor-pointer list-none text-muted hover:text-foreground">⋯ Mer</summary>
-          <div className="mt-2 flex flex-col gap-2">
+          <summary
+            aria-label="Mer"
+            title="Mer"
+            className="absolute right-1 top-1.5 flex h-10 w-9 cursor-pointer list-none items-center justify-center rounded-lg text-lg leading-none text-muted hover:bg-surface-2 hover:text-foreground focus-visible:outline-2 focus-visible:outline-accent"
+          >
+            ⋯
+          </summary>
+          <div className="mt-1.5 flex flex-col gap-2 border-t border-border pt-2">
             {kind === "routine" ? (
               <>
                 <form action={postponeChoreAction} className="flex flex-wrap items-center gap-2">

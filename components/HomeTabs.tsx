@@ -15,7 +15,7 @@ export default function HomeTabs({ unread = 0 }: { unread?: number }) {
   const pathname = usePathname();
   if (pathname === "/home") return null;
   return (
-    <nav className="mb-4 flex gap-1 rounded-xl border border-border bg-surface p-1 text-sm" aria-label="Hjem">
+    <nav className="mb-2 flex gap-0.5 rounded-lg border border-border bg-surface p-0.5 text-[13px]" aria-label="Hjem">
       {TABS.map((t) => {
         const active = pathname.startsWith(t.href);
         return (
@@ -23,13 +23,13 @@ export default function HomeTabs({ unread = 0 }: { unread?: number }) {
             key={t.href}
             href={t.href}
             aria-current={active ? "page" : undefined}
-            className={`flex-1 rounded-lg px-3 py-1.5 text-center transition-colors ${
+            className={`flex-1 whitespace-nowrap rounded-md px-1 py-1.5 text-center transition-colors ${
               active ? "bg-accent-soft font-medium text-accent" : "text-muted hover:bg-surface-2 hover:text-foreground"
             }`}
           >
             {t.label}
             {t.href === "/home/varsler" && unread > 0 && !active && (
-              <span className="ml-1 rounded-full bg-accent px-1.5 text-xs font-semibold text-white">{unread}</span>
+              <span className="ml-0.5 rounded-full bg-accent px-1 text-[10px] font-semibold text-white">{unread}</span>
             )}
           </Link>
         );

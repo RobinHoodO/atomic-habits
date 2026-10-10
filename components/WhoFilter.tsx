@@ -23,13 +23,13 @@ export default function WhoFilter({
     ...(withTurns ? [{ key: "turns", label: "Bytter på" }] : []),
   ];
   return (
-    <nav className="flex flex-wrap gap-1.5" aria-label="Filtrer på hvem">
+    <nav className="-mx-4 flex gap-1 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none]" aria-label="Filtrer på hvem">
       {opts.map((o) => (
         <Link
           key={o.key}
           href={o.key === "all" ? path : `${path}?who=${o.key}`}
           aria-current={String(current) === o.key ? "true" : undefined}
-          className={`btn text-xs ${String(current) === o.key ? "border-accent bg-accent text-white" : ""}`}
+          className={`btn shrink-0 whitespace-nowrap px-2.5 py-1.5 text-xs shadow-none ${String(current) === o.key ? "border-accent bg-accent text-white" : ""}`}
         >
           {o.label}
         </Link>

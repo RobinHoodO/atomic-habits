@@ -150,11 +150,12 @@ export default async function TodayPage({
   }
   function Fold({ title, count, open, children }: { title: string; count: number; open?: boolean; children: React.ReactNode }) {
     return (
-      <details open={open} className="flex flex-col gap-2">
-        <summary className="cursor-pointer list-none text-xs font-semibold uppercase tracking-wide text-muted">
-          ▸ {title} ({count})
+      <details open={open} className="rounded-lg border border-border bg-surface/60">
+        <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between px-3 text-xs font-medium text-muted">
+          <span>▸ {title}</span>
+          <span>{count}</span>
         </summary>
-        <div className="mt-2 flex flex-col gap-2">{children}</div>
+        <div className="flex flex-col gap-1.5 p-1.5 pt-0">{children}</div>
       </details>
     );
   }
@@ -171,26 +172,26 @@ export default async function TodayPage({
         ...onTime.map((i) => `${i.kind}${i.id}`),
       ]}
     >
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-2">
       <Suspense fallback={null}>
         <GameStrip userId={user.id} />
       </Suspense>
-      <header className="flex items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">I dag</h1>
-          <p className="mt-0.5 text-sm text-muted">
-            {new Date(today + "T00:00:00").toLocaleDateString("nb-NO", { weekday: "long", day: "numeric", month: "long" })}
-          </p>
-        </div>
+      <header className="flex items-center justify-between gap-2">
+        <h1 className="min-w-0 truncate text-xl font-bold tracking-tight">
+          I dag{" "}
+          <span className="text-sm font-normal text-muted">
+            {new Date(today + "T00:00:00").toLocaleDateString("nb-NO", { weekday: "short", day: "numeric", month: "short" })}
+          </span>
+        </h1>
         {home && (
-          <div className="flex items-center gap-2">
-            <Link href="/home/varsler" className="btn relative text-sm" aria-label={`Varsler${unread.length ? ` (${unread.length} nye)` : ""}`}>
+          <div className="flex items-center gap-1.5">
+            <Link href="/home/varsler" className="btn h-9 px-2.5 text-sm shadow-none" aria-label={`Varsler${unread.length ? ` (${unread.length} nye)` : ""}`}>
               🔔
               {unread.length > 0 && (
-                <span className="ml-1 rounded-full bg-accent px-1.5 text-xs font-semibold text-white">{unread.length}</span>
+                <span className="rounded-full bg-accent px-1.5 text-[11px] font-semibold text-white">{unread.length}</span>
               )}
             </Link>
-            <Link href="/home/premier" className="btn text-sm">🎁 {wallet[user.id] ?? 0} p</Link>
+            <Link href="/home/premier" className="btn h-9 px-2.5 text-sm shadow-none">🎁 {wallet[user.id] ?? 0} p</Link>
           </div>
         )}
       </header>
@@ -201,42 +202,44 @@ export default async function TodayPage({
         <Link
           key={e.id}
           href="/home/varsler"
-          className="card py-2 text-sm ring-2 ring-accent/40 hover:bg-surface-2"
+          className="card px-3 py-1.5 text-sm shadow-none ring-2 ring-accent/40 hover:bg-surface-2"
         >
           {e.kind === "chore_given" ? "🎁" : "👉"} {eventText(e, nameOf.get(Number(e.actor_id)) ?? "Partneren", user.id)}
         </Link>
       ))}
       {toGive.map((d) => (
-        <form key={d.id} action={markGivenAction} className="card flex items-center justify-between gap-3 py-2 text-sm">
+        <form key={d.id} action={markGivenAction} className="card flex items-center justify-between gap-2 px-3 py-1.5 text-sm shadow-none">
           <input type="hidden" name="id" value={d.id} />
           <span className="min-w-0 truncate">🎁 {nameOf.get(Number(d.user_id))} løste inn: «{d.title}»</span>
-          <button className="btn btn-primary">Gitt ✓</button>
+          <button className="btn btn-primary h-10 px-3">Gitt ✓</button>
         </form>
       ))}
 
       {/* quick add: a Task in one line */}
       {home ? (
-        <form action={addTaskAction} className="card flex flex-col gap-2 text-sm">
+        <form action={addTaskAction} className="group card flex flex-col gap-1.5 rounded-xl px-2 py-2 text-sm shadow-none">
           <input type="hidden" name="back" value="/" />
-          <div className="flex gap-2">
-            <input className="input flex-1" name="title" placeholder="Ny oppgave…" required />
-            <input className="input w-16" type="number" name="points" min={0} defaultValue={5} aria-label="Poeng" title="Poeng" />
-            <button className="btn btn-primary">Legg til</button>
+          <div className="flex gap-1.5">
+            <input className="input h-10 min-w-0 flex-1 py-1" name="title" placeholder="Ny oppgave…" aria-label="Ny oppgave" required />
+            <input className="input h-10 w-14 px-2 py-1" type="number" name="points" min={0} defaultValue={5} aria-label="Poeng" title="Poeng" />
+            <button className="btn btn-primary h-10 w-10 px-0 text-lg" aria-label="Legg til" title="Legg til">+</button>
           </div>
-          <DayPicker first="today" withLater />
-          <OwnerPills members={members} me={user.id} />
+          <div className="hidden flex-col gap-1 group-focus-within:flex">
+            <DayPicker first="today" withLater />
+            <OwnerPills members={members} me={user.id} />
+          </div>
         </form>
       ) : (
-        <Link href="/home" className="card text-sm text-muted hover:text-foreground">
+        <Link href="/home" className="card px-3 py-2 text-sm text-muted shadow-none hover:text-foreground">
           🏠 Lag et hjem for rutiner og oppgaver sammen →
         </Link>
       )}
 
-      <section className="flex flex-col gap-2">
+      <section className="flex flex-col gap-1.5">
         {nothing ? (
-          <div className="card text-sm text-muted">Alt er gjort for i dag 🎉</div>
+          <div className="card px-3 py-2 text-sm text-muted shadow-none">Alt er gjort for i dag 🎉</div>
         ) : (
-          <ul className="flex flex-col gap-2">
+          <ul className="flex flex-col gap-1.5">
             {late.map((i) => <HomeRow key={`${i.kind}${i.id}`} i={i} />)}
             {dueHabits.map((r) => (
               <TodayRow
@@ -255,22 +258,22 @@ export default async function TodayPage({
 
       {partner && t.theirs.length > 0 && (
         <Fold title={`${partner.name} i dag`} count={t.theirs.length}>
-          <ul className="flex flex-col gap-2">{t.theirs.map((i) => <HomeRow key={`${i.kind}${i.id}`} i={i} dim />)}</ul>
+          <ul className="flex flex-col gap-1.5">{t.theirs.map((i) => <HomeRow key={`${i.kind}${i.id}`} i={i} dim />)}</ul>
         </Fold>
       )}
       {home && (
         <Fold title={`Neste ${days} dager`} count={t.upcoming.length} open={!!n}>
-          <div className="flex gap-2 text-xs">
+          <div className="flex gap-1 text-xs">
             {DAYS_CHOICES.map((d) => (
-              <Link key={d} href={`/?n=${d}`} className={`btn ${d === days ? "btn-primary" : ""}`}>{d} dager</Link>
+              <Link key={d} href={`/?n=${d}`} className={`btn px-2.5 py-1.5 shadow-none ${d === days ? "btn-primary" : ""}`}>{d} dager</Link>
             ))}
           </div>
-          <ul className="flex flex-col gap-2">{t.upcoming.map((i) => <HomeRow key={`${i.kind}${i.id}`} i={i} />)}</ul>
+          <ul className="flex flex-col gap-1.5">{t.upcoming.map((i) => <HomeRow key={`${i.kind}${i.id}`} i={i} />)}</ul>
         </Fold>
       )}
       {t.vedBehov.length > 0 && (
         <Fold title="Ved behov" count={t.vedBehov.length}>
-          <ul className="flex flex-col gap-2">{t.vedBehov.map((i) => <HomeRow key={`${i.kind}${i.id}`} i={i} />)}</ul>
+          <ul className="flex flex-col gap-1.5">{t.vedBehov.map((i) => <HomeRow key={`${i.kind}${i.id}`} i={i} />)}</ul>
         </Fold>
       )}
       {doneHabits.length > 0 && (

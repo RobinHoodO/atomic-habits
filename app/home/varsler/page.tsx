@@ -22,18 +22,14 @@ export default async function VarslerPage() {
   await markHomeSeen(home.id, user.id);
 
   return (
-    <div className="flex flex-col gap-3">
-      <header>
-        <h1 className="text-xl font-bold">Varsler</h1>
-        <p className="text-sm text-muted">Hva som har skjedd hjemme.</p>
-      </header>
+    <div className="flex flex-col gap-2">
       {events.length === 0 && <p className="text-sm text-muted">Ingenting ennå.</p>}
-      <ul className="flex flex-col gap-2">
+      <ul className="flex flex-col gap-1">
         {events.map((e) => {
           const unread = isFresh(e.actor_id, e.created_at, user.id, threshold);
           const who = Number(e.actor_id) === user.id ? "Du" : nameOf.get(Number(e.actor_id)) ?? "Noen";
           return (
-            <li key={e.id} className={`card flex items-center justify-between gap-3 py-2 text-sm ${unread ? "ring-2 ring-accent/40" : ""}`}>
+            <li key={e.id} className={`card flex items-center justify-between gap-2 rounded-xl px-3 py-1.5 text-sm shadow-none ${unread ? "ring-2 ring-accent/40" : ""}`}>
               <span className="min-w-0">
                 {unread && <span aria-hidden className="mr-1.5 text-accent">●</span>}
                 {eventText(e, who, user.id)}
