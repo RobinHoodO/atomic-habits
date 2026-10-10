@@ -9,6 +9,7 @@ export const dynamic = "force-dynamic";
 const ERRORS: Record<string, string> = {
   exists: "An account with that email already exists.",
   short: "Password must be at least 8 characters.",
+  server: "Something went wrong. Please try again.",
 };
 
 export default async function RegisterPage({

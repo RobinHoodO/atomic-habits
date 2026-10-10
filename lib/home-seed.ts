@@ -1,5 +1,5 @@
 import "server-only";
-import { libsql } from "./db";
+import { dbBatch } from "./db";
 import { assertHomeMember, listChores } from "./home";
 import { cadencePoints, type Cadence } from "./home-cadence";
 
@@ -60,7 +60,7 @@ export async function seedStarter(homeId: number, userId: number): Promise<numbe
   if ((await listChores(homeId)).length > 0) return 0;
   const sql = `INSERT INTO chores (home_id, title, area, cadence, points, rotating, conditional_note)
      VALUES (?, ?, ?, ?, ?, ?, ?)`;
-  await libsql().batch(
+  await dbBatch(
     STARTER.map((r) => ({
       sql,
       args: [homeId, r.title, r.area, r.cadence, cadencePoints(r.cadence), r.rotating ? 1 : 0, r.note ?? null],
