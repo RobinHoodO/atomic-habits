@@ -178,7 +178,8 @@ CREATE TABLE IF NOT EXISTS home_tasks (
 );
 `;
 
-// Postgres has ADD COLUMN IF NOT EXISTS, so these run on every cold start.
+// Home Today additions. Applied by hand with the rest of this file (psql -f);
+// every statement is idempotent, so re-running the whole schema is safe.
 import { HOME_COLUMNS } from "./schema";
 const PG_HOME_TABLES = [
   `CREATE TABLE IF NOT EXISTS home_rewards (
@@ -199,4 +200,7 @@ const PG_HOME_TABLES = [
     given_at   TEXT
   )`,
 ];
-export const PG_MIGRATIONS = [...PG_HOME_TABLES, ...HOME_COLUMNS.map(([t, c]) => `ALTER TABLE ${t} ADD COLUMN IF NOT EXISTS ${c}`)];
+export const SCHEMA_PG_HOME_SQL = [
+  ...PG_HOME_TABLES,
+  ...HOME_COLUMNS.map(([t, c]) => `ALTER TABLE ${t} ADD COLUMN IF NOT EXISTS ${c}`),
+].join(";\n") + ";\n";

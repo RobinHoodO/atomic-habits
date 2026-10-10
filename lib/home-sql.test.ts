@@ -87,4 +87,10 @@ db.prepare("UPDATE chores SET next_due = ?, given_to = ? WHERE id = ?").run(l.pr
 const back = db.prepare("SELECT next_due, given_to FROM chores WHERE id = ?").get(trash) as { next_due: string; given_to: number };
 assert.deepEqual([back.next_due, back.given_to], ["2026-06-21", u2], "Angre puts due date and Gi bort back");
 
+// --- Gjort is compare-and-set: the second tap on the same round changes nothing ---
+const cas = `UPDATE chores SET next_due = ?, given_to = NULL WHERE id = ? AND COALESCE(next_due, '') = ?`;
+assert.equal(db.prepare(cas).run("2026-06-28", trash, "2026-06-21").changes, 1, "first tap closes the round");
+assert.equal(db.prepare(cas).run("2026-07-05", trash, "2026-06-21").changes, 0, "second tap sees the round already moved");
+assert.equal(db.prepare(cas).run("2026-06-30", floor, "").changes, 1, "a row with no stored date matches ''");
+
 console.log("✓ all home SQL checks passed");

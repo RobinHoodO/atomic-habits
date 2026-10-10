@@ -9,6 +9,7 @@ import {
   dueState,
   isVedBehov,
   nearestWeekend,
+  dueAfterEdit,
   fairness,
   taskIsStale,
   cadenceDays,
@@ -79,5 +80,16 @@ assert.equal(taskIsStale("2026-06-10", today), false, "10 days → not stale");
 // --- cadence days sanity ---
 assert.equal(cadenceDays("daily"), 1);
 assert.equal(cadenceDays("annual"), 365);
+
+// --- editing a Routine: keep, take the picked date, or reschedule on a rule change ---
+{
+  const weekly = { cadence: "weekly" as const, every_days: null, weekdays: null, every_weeks: null };
+  const monFixed = { ...weekly, weekdays: "1", every_weeks: 1 };
+  assert.equal(dueAfterEdit(weekly, "2026-06-18", weekly, "2026-06-18", today), "2026-06-18", "title-only edit keeps an overdue date");
+  assert.equal(dueAfterEdit(weekly, "2026-06-18", weekly, null, today), "2026-06-18", "empty date field keeps the date");
+  assert.equal(dueAfterEdit(weekly, "2026-06-18", weekly, "2026-07-01", today), "2026-07-01", "a picked date wins");
+  assert.equal(dueAfterEdit(weekly, "2026-06-25", monFixed, "2026-06-25", today), "2026-06-22", "rule change → next Monday");
+  assert.equal(dueAfterEdit(weekly, "2026-06-25", { ...weekly, cadence: "adhoc" }, "2026-06-25", today), null, "→ Ved behov has no date");
+}
 
 console.log("✓ all home-cadence checks passed");

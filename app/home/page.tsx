@@ -126,20 +126,23 @@ export default async function HomePage({
   );
   // Doc §9: a "Senere" Task older than 2 weeks shows up on Today at the weekend.
   const staleIds = new Set(
-    openTasks.filter((x) => !x.due_on && taskIsStale(x.created_at, today)).map((x) => x.id),
+    openTasks
+      .filter((x) => !x.due_on && taskIsStale(x.created_at, today))
+      .filter((x) => x.owner_user_id == null || Number(x.owner_user_id) === user.id)
+      .map((x) => x.id),
   );
   const later = weekend ? t.later.filter((i) => !staleIds.has(i.id)) : t.later;
   const mine = weekend ? [...t.mine, ...t.later.filter((i) => staleIds.has(i.id))] : t.mine;
 
   // Angre bar: only for the viewer's own last tick.
-  const undoLog = undo
+  const undoLog = Number.isInteger(Number(undo)) && undo
     ? await dbGet<{ id: number; chore_id: number; user_id: number }>(
         `SELECT id, chore_id, user_id FROM chore_logs WHERE id = ?`,
         [Number(undo)],
       )
     : undefined;
   const undoChore = undoLog && Number(undoLog.user_id) === user.id ? choreById.get(Number(undoLog.chore_id)) : undefined;
-  const undoneTask = undoTask ? allTasks.find((x) => x.id === Number(undoTask) && x.done_at) : undefined;
+  const undoneTask = Number.isInteger(Number(undoTask)) && undoTask ? allTasks.find((x) => x.id === Number(undoTask) && x.done_at) : undefined;
   const partner = members.find((m) => Number(m.user_id) !== user.id);
   const wallet = await walletByMember(home.id);
   const toGive = (await listRedemptions(home.id)).filter((d) => !d.given_at && Number(d.user_id) !== user.id);
@@ -275,6 +278,7 @@ export default async function HomePage({
       {undoneTask && (
         <form action={completeTaskAction} className="card flex items-center justify-between gap-3 py-2 text-sm">
           <input type="hidden" name="id" value={undoneTask.id} />
+          <input type="hidden" name="undo" value="1" />
           <span className="min-w-0 truncate">✓ «{undoneTask.title}» gjort</span>
           <button className="btn">Angre</button>
         </form>

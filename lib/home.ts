@@ -7,6 +7,7 @@ import {
   firstDue,
   nextAfterRound,
   isVedBehov,
+  dueAfterEdit,
   type Cadence,
   type RuleFields,
 } from "./home-cadence";
@@ -134,12 +135,12 @@ export interface ChoreInput extends RuleFields {
   standard: string | null;
 }
 
-function ruleArgs(input: ChoreInput) {
+function ruleArgs(input: ChoreInput, nextDue: string | null) {
   return {
     every_days: input.every_days,
     weekdays: input.weekdays,
     every_weeks: input.every_weeks,
-    next_due: input.next_due ?? firstDue(input),
+    next_due: nextDue,
   };
 }
 
@@ -159,7 +160,7 @@ export async function listChores(homeId: number): Promise<Chore[]> {
 }
 
 export async function getChore(choreId: number, userId: number): Promise<Chore> {
-  const c = await dbGet<Chore>(`SELECT * FROM chores WHERE id = ?`, [choreId]);
+  const c = await dbGet<Chore>(`SELECT * FROM chores WHERE id = ? AND active = 1`, [choreId]);
   if (!c) throw new AuthzError("chore not found");
   await assertHomeMember(c.home_id, userId);
   return c;
@@ -173,7 +174,7 @@ export async function addChore(homeId: number, userId: number, input: ChoreInput
          VALUES (@home_id, @title, @area, @cadence, @points, @assignee_user_id, @rotating, @conditional_note, @standard,
          @every_days, @weekdays, @every_weeks, @next_due)`,
     {
-      ...ruleArgs(input),
+      ...ruleArgs(input, input.next_due ?? firstDue(input)),
       home_id: homeId,
       title: input.title,
       area: input.area,
@@ -189,14 +190,15 @@ export async function addChore(homeId: number, userId: number, input: ChoreInput
 }
 
 export async function updateChore(choreId: number, userId: number, input: ChoreInput): Promise<void> {
-  await getChore(choreId, userId); // authz
+  const old = await getChore(choreId, userId); // authz
+  const oldDue = effectiveDue(old, (await lastDoneByChore(old.home_id))[choreId] ?? null);
   await dbRun(
     `UPDATE chores SET title=@title, area=@area, cadence=@cadence, points=@points,
        assignee_user_id=@assignee_user_id, rotating=@rotating, conditional_note=@conditional_note,
        standard=@standard, every_days=@every_days, weekdays=@weekdays, every_weeks=@every_weeks,
        next_due=@next_due WHERE id=@id`,
     {
-      ...ruleArgs(input),
+      ...ruleArgs(input, dueAfterEdit(old, oldDue, input, input.next_due)),
       id: choreId,
       title: input.title,
       area: input.area,
@@ -225,14 +227,16 @@ export async function logChore(choreId: number, userId: number, date = todayStr(
   const bonus = c.assignee_user_id == null && !c.rotating ? FELLES_BONUS : 0;
   const lastDone = (await lastDoneByChore(c.home_id))[choreId] ?? null;
   const due = effectiveDue(c, lastDone);
+  // Compare-and-set on the round: a double tap or a stale page cannot close it twice.
+  const moved = await dbRun(
+    `UPDATE chores SET next_due = ?, given_to = NULL WHERE id = ? AND COALESCE(next_due, '') = ?`,
+    [nextAfterRound(c, due, date), choreId, c.next_due ?? ""],
+  );
+  if (moved.rowsAffected === 0) return 0; // someone closed this round a moment ago
   const info = await dbRun(
     `INSERT INTO chore_logs (chore_id, user_id, date, points, prev_due, prev_given_to) VALUES (?, ?, ?, ?, ?, ?)`,
     [choreId, userId, date, c.points + bonus, due, c.given_to],
   );
-  await dbRun(`UPDATE chores SET next_due = ?, given_to = NULL WHERE id = ?`, [
-    nextAfterRound(c, due, date),
-    choreId,
-  ]);
   return Number(info.lastInsertRowid);
 }
 
@@ -244,6 +248,11 @@ export async function undoChoreLog(logId: number, userId: number): Promise<void>
   );
   if (!l || Number(l.user_id) !== userId) throw new AuthzError("not your tick");
   await getChore(Number(l.chore_id), userId);
+  // Only the newest tick of a Routine can be undone; an older one would rewind a later round.
+  const latest = await dbGet<{ id: number }>(`SELECT MAX(id) AS id FROM chore_logs WHERE chore_id = ?`, [
+    Number(l.chore_id),
+  ]);
+  if (Number(latest?.id) !== logId) throw new AuthzError("only the latest tick can be undone");
   await dbRun(`DELETE FROM chore_logs WHERE id = ?`, [logId]);
   await dbRun(`UPDATE chores SET next_due = ?, given_to = ? WHERE id = ?`, [
     l.prev_due,
@@ -256,10 +265,10 @@ export async function undoChoreLog(logId: number, userId: number): Promise<void>
 export async function skipChore(choreId: number, userId: number, today = todayStr()): Promise<void> {
   const c = await getChore(choreId, userId);
   const due = effectiveDue(c, (await lastDoneByChore(c.home_id))[choreId] ?? null);
-  await dbRun(`UPDATE chores SET next_due = ?, given_to = NULL WHERE id = ?`, [
-    nextAfterRound(c, due, today),
-    choreId,
-  ]);
+  await dbRun(
+    `UPDATE chores SET next_due = ?, given_to = NULL WHERE id = ? AND COALESCE(next_due, '') = ?`,
+    [nextAfterRound(c, due, today), choreId, c.next_due ?? ""],
+  );
 }
 
 // Utsett: same round, later day.
@@ -359,17 +368,18 @@ export async function setTaskDay(taskId: number, userId: number, dueOn: string |
   await dbRun(`UPDATE home_tasks SET due_on = ? WHERE id = ?`, [dueOn, taskId]);
 }
 
-export async function completeTask(taskId: number, userId: number): Promise<void> {
+// Gjort / Angre on a Task. Idempotent: a second tap changes nothing.
+export async function setTaskDone(taskId: number, userId: number, done: boolean): Promise<void> {
   const t = await dbGet<HomeTask>(`SELECT * FROM home_tasks WHERE id = ?`, [taskId]);
   if (!t) throw new AuthzError("task not found");
   await assertHomeMember(t.home_id, userId);
-  if (t.done_at) {
-    await dbRun(`UPDATE home_tasks SET done_at = NULL, done_by = NULL WHERE id = ?`, [taskId]);
-  } else {
-    await dbRun(`UPDATE home_tasks SET done_at = datetime('now'), done_by = ? WHERE id = ?`, [
+  if (done) {
+    await dbRun(`UPDATE home_tasks SET done_at = datetime('now'), done_by = ? WHERE id = ? AND done_at IS NULL`, [
       userId,
       taskId,
     ]);
+  } else {
+    await dbRun(`UPDATE home_tasks SET done_at = NULL, done_by = NULL WHERE id = ? AND done_by = ?`, [taskId, userId]);
   }
 }
 

@@ -172,3 +172,22 @@ export function ruleLabel(r: RuleFields): string {
   if (r.every_days && r.every_days > 0) return `Hver ${r.every_days}. dag`;
   return cadenceLabel(r.cadence);
 }
+
+function ruleKey(r: RuleFields): string {
+  const days = parseWeekdays(r.weekdays);
+  return days.length ? `fixed:${days.join(",")}:${r.every_weeks ?? 1}` : `after:${periodDays(r)}`;
+}
+
+// Saving the edit form: a newly picked date wins; a changed rule reschedules
+// from today; otherwise the Routine keeps its current due date.
+export function dueAfterEdit(
+  oldRule: RuleFields,
+  oldDue: string | null,
+  next: RuleFields,
+  submitted: string | null,
+  today = todayStr(),
+): string | null {
+  if (submitted && submitted !== oldDue) return submitted;
+  if (ruleKey(oldRule) !== ruleKey(next)) return firstDue(next, today);
+  return oldDue;
+}

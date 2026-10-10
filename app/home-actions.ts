@@ -21,7 +21,7 @@ import {
   markRedemptionGiven,
   addTask,
   setTaskDay,
-  completeTask,
+  setTaskDone,
   deleteTask,
   homeForUser,
   type ChoreInput,
@@ -88,6 +88,12 @@ function parseDay(fd: FormData): string | null {
   }
 }
 
+// Poeng: a whole number 0–1000; blank or junk → the fallback.
+function pointsOr(fd: FormData, fallback: number): number {
+  const n = Math.round(Number(str(fd, "points")));
+  return Number.isFinite(n) && str(fd, "points") != null ? Math.max(0, Math.min(1000, n)) : fallback;
+}
+
 const UNIT_DAYS: Record<string, number> = { d: 1, w: 7, m: 30 }; // ponytail: a month is 30 days
 
 async function parseChore(fd: FormData, homeId: number, userId: number): Promise<ChoreInput> {
@@ -101,8 +107,8 @@ async function parseChore(fd: FormData, homeId: number, userId: number): Promise
     .getAll("wd")
     .map(Number)
     .filter((d) => Number.isInteger(d) && d >= 0 && d <= 6);
+  if (fixed && weekdays.length === 0) throw new Error("Velg minst én dag for Faste dager");
   const owner = await parseOwner(fd, homeId, userId);
-  const pointsRaw = str(fd, "points");
   return {
     title: reqStr(fd, "title"),
     area: str(fd, "area"),
@@ -111,7 +117,7 @@ async function parseChore(fd: FormData, homeId: number, userId: number): Promise
     weekdays: fixed && weekdays.length ? weekdays.join(",") : null,
     every_weeks: fixed ? Math.max(1, Math.min(4, Number(str(fd, "every_weeks")) || 1)) : null,
     next_due: date(fd, "next_due"),
-    points: pointsRaw && Number.isFinite(Number(pointsRaw)) ? Math.max(0, Number(pointsRaw)) : cadencePoints(cadence),
+    points: pointsOr(fd, cadencePoints(cadence)),
     assignee_user_id: typeof owner === "number" ? owner : null,
     rotating: owner === "turns",
     conditional_note: owner === "felles" ? str(fd, "conditional_note") : null,
@@ -177,7 +183,7 @@ export async function logChoreAction(fd: FormData) {
   const user = await requireUser();
   const logId = await logChore(int(fd, "id"), user.id);
   refresh();
-  if (str(fd, "from") === "today") redirect(`/home?undo=${logId}`);
+  if (str(fd, "from") === "today") redirect(logId ? `/home?undo=${logId}` : "/home");
 }
 
 export async function undoChoreAction(fd: FormData) {
@@ -211,13 +217,12 @@ export async function giveAwayChoreAction(fd: FormData) {
 export async function addTaskAction(fd: FormData) {
   const user = await requireUser();
   const homeId = await requireHomeId(user.id);
-  const pts = str(fd, "points");
   const owner = await parseOwner(fd, homeId, user.id);
   await addTask(
     homeId,
     user.id,
     reqStr(fd, "title"),
-    pts ? Math.max(0, Number(pts)) : 5,
+    pointsOr(fd, 5),
     parseDay(fd),
     typeof owner === "number" ? owner : null, // a Task has no Bytter på
   );
@@ -234,9 +239,10 @@ export async function setTaskDayAction(fd: FormData) {
 export async function completeTaskAction(fd: FormData) {
   const user = await requireUser();
   const id = int(fd, "id");
-  await completeTask(id, user.id);
+  const undo = str(fd, "undo") === "1";
+  await setTaskDone(id, user.id, !undo);
   refresh();
-  if (str(fd, "from") === "today") redirect(`/home?undoTask=${id}`);
+  if (!undo && str(fd, "from") === "today") redirect(`/home?undoTask=${id}`);
 }
 
 export async function deleteTaskAction(fd: FormData) {
